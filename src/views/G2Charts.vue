@@ -73,7 +73,7 @@ const stat = {
 .g2-left,
 .g2-right {
   position: absolute;
-  z-index: 3;
+  z-index: 100; /* 全局浮层：盖过页内栏（实时数据栏等），且不被路由页面遮挡 */
   width: 25vw;
   top: 160px;
   height: 75vh;

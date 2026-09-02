@@ -20,6 +20,7 @@ import { cameras, trafficLights, police, congestion, heatPoints } from './mockDa
 import busRoutes from '@/assets/GIS_Data/bus_routes.json'
 import busStops from '@/assets/GIS_Data/bus_stops_amap.json'
 import roadData from '@/assets/GIS_Data/Zibo_roads.json'
+import { baseLayerMap } from './initLayer'
 
 /* ---------------- 数据预处理（模块加载时一次） ---------------- */
 // 数组 {lng,lat,...} → GeoJSON FeatureCollection
@@ -233,8 +234,8 @@ export function initTrafficLayers(scene) {
 /** 显示/隐藏交通图层（懒创建：首次显示时才 addLayer） */
 export function setTrafficLayerVisible(name, visible) {
   if (BRIDGE_NAMES[name]) {
-    // 桥接基础图层
-    const base = sceneRef.getLayerByName(BRIDGE_NAMES[name])
+    // 桥接基础图层（按实例注册表取，scene.getLayerByName 在 L7 2.15 不可用）
+    const base = baseLayerMap[BRIDGE_NAMES[name]]
     if (base) {
       visible ? base.show() : base.hide()
       return true
@@ -259,7 +260,7 @@ export function setTrafficLayerVisible(name, visible) {
 
 export const toggleTrafficLayer = (name) => {
   const cur = BRIDGE_NAMES[name]
-    ? sceneRef.getLayerByName(BRIDGE_NAMES[name])?.isVisible()
+    ? !!baseLayerMap[BRIDGE_NAMES[name]]?.isVisible()
     : ensure(name).visible
   setTrafficLayerVisible(name, !cur)
   return !cur
@@ -267,7 +268,7 @@ export const toggleTrafficLayer = (name) => {
 
 export const isTrafficLayerVisible = (name) => {
   if (BRIDGE_NAMES[name]) {
-    return !!sceneRef?.getLayerByName(BRIDGE_NAMES[name])?.isVisible()
+    return !!baseLayerMap[BRIDGE_NAMES[name]]?.isVisible()
   }
   return !!ensure(name).visible
 }

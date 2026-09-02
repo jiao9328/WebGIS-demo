@@ -2,6 +2,14 @@ import roadData from '../assets/GIS_Data/Zibo_roads.json'
 import cityData from '../assets/GIS_Data/Zibo_Buildings.json'
 
 import { LineLayer,CityBuildingLayer } from '@antv/l7';
+
+/**
+ * 基础图层实例注册表。
+ * 坑：L7 2.15 的 scene.getLayerByName 查的是内部数字 id，构造选项里的 id 查不到，
+ * 统一按本表取实例（initTrafficLayers / roadClassLayers / Home 共用）
+ */
+export const baseLayerMap = {}
+
 export default (scene) => {
     const road_layer = new LineLayer({
         id: '淄博道路',
@@ -16,6 +24,7 @@ export default (scene) => {
             duration: 2 //执行时间
         })
     scene.addLayer(road_layer)
+    baseLayerMap['淄博道路'] = road_layer
 
     const building_layer = new CityBuildingLayer({
         id: '淄博市',
@@ -42,4 +51,5 @@ export default (scene) => {
       }
     });
   scene.addLayer(building_layer);
+  baseLayerMap['淄博市'] = building_layer
 }
