@@ -1,7 +1,7 @@
 <template>
   <div class="footer">
     <div class="btn-groups">
-      <!-- 视角/视图组 -->
+      <!-- 平铺排列：视图 → 控制 → 查询工具 → 风格（无分隔线） -->
       <RouterLink to="/" @click="reset()">
         <div class="item">
           <button class="toggle-btn">
@@ -18,13 +18,6 @@
           <p>地球自转</p>
         </div>
       </RouterLink>
-      <!-- 控制中心：开关式浮层（点其它按钮不关闭，再点本按钮才关闭） -->
-      <div class="item" :class="{ on: store.chartsOpen }" @click="toggleCharts">
-        <button class="toggle-btn">
-          <i class="iconfont icon-supervision-full"></i>
-        </button>
-        <p>控制中心</p>
-      </div>
       <RouterLink to="/cityview">
         <div class="item">
           <button class="toggle-btn">
@@ -33,10 +26,13 @@
           <p>城市视角</p>
         </div>
       </RouterLink>
-
-      <div class="tb-divider"></div>
-
-      <!-- 工具组 -->
+      <!-- 控制中心：开关式浮层（点其它按钮不关闭，再点本按钮才关闭） -->
+      <div class="item" :class="{ on: store.chartsOpen }" @click="toggleCharts">
+        <button class="toggle-btn">
+          <i class="iconfont icon-supervision-full"></i>
+        </button>
+        <p>控制中心</p>
+      </div>
       <el-popover placement="top" :width="100" trigger="click" popper-style="background-color: #53697670;color:#fff">
         <template #reference>
           <div class="item">
@@ -54,9 +50,6 @@
           </RouterLink>
         </div>
       </el-popover>
-      <div class="tb-divider"></div>
-
-      <!-- 查询/功能区 -->
       <RouterLink to="/eventinfo">
         <div class="item">
           <button class="toggle-btn">
@@ -65,20 +58,20 @@
           <p>拉框查询</p>
         </div>
       </RouterLink>
-      <RouterLink to="/navigation">
-        <div class="item">
-          <button class="toggle-btn">
-            <i class="iconfont icon-daohang"></i>
-          </button>
-          <p>导航</p>
-        </div>
-      </RouterLink>
       <RouterLink to="/areasearch">
         <div class="item">
           <button class="toggle-btn">
             <i class="iconfont icon-quyusousuo"></i>
           </button>
           <p>区域搜索</p>
+        </div>
+      </RouterLink>
+      <RouterLink to="/navigation">
+        <div class="item">
+          <button class="toggle-btn">
+            <i class="iconfont icon-daohang"></i>
+          </button>
+          <p>导航</p>
         </div>
       </RouterLink>
       <RouterLink to="/changestyle">
@@ -208,14 +201,6 @@ const tools = ["drawPolygonTool", "drawRectTool", "drawCircleTool", "line"];
 
 .btn-groups .item.on p {
   color: #7dd3ff;
-}
-
-/* 分组分隔线 */
-.tb-divider {
-  width: 1px;
-  height: 36px;
-  margin: 0 4px;
-  background: rgba(56, 148, 255, 0.25);
 }
 
 a {

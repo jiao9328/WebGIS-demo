@@ -71,6 +71,7 @@ ws.onopen = async () => {
       header: document.querySelector('.header-title')?.textContent || '',
       canvas: !!document.querySelector('.mapboxgl-canvas'),
       bottom: [...document.querySelectorAll('.btn-groups .item p')].length,
+      dividers: document.querySelectorAll('.btn-groups .tb-divider').length,
       roadBtns: [...document.querySelectorAll('.road-btn')].map(b => b.textContent.trim()),
       rtItems: [...document.querySelectorAll('.rt-item')].map(i => i.textContent.trim()),
       chartsOpen: !!document.querySelector('.g2-left'),
@@ -86,6 +87,7 @@ ws.onopen = async () => {
   assert(h1.header.includes('智慧交通'), '首页Header')
   assert(h1.canvas, '首页地图canvas')
   assert(h1.bottom === 9, '底部9个按钮', String(h1.bottom))
+  assert(!h1.dividers, '底部无分隔线', String(h1.dividers))
   assert(!h1.chartsOpen, '控制中心默认收起')
   assert(h1.traffic && h1.roads, '交通/道路调试桥')
   assert(h1.mapCenter === '[118.05,36.81]', '首页地图居中淄博', h1.mapCenter)
