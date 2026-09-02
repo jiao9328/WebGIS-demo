@@ -1,0 +1,87 @@
+* {
+  margin: 0;
+  padding: 0;
+}
+ul,
+li {
+  border: none;
+}
+table {
+  border-collapse: collapse;
+}.screen-panel {
+  border-radius: 10px;
+  padding: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(8, 28, 56, 0.85), rgba(16, 48, 90, 0.75));
+  border: 1px solid rgba(56, 148, 255, 0.35);
+  box-shadow: 0 0 12px rgba(0, 150, 255, 0.15) inset, 0 0 8px rgba(0, 120, 255, 0.1);
+  position: relative;
+  backdrop-filter: blur(4px);
+}
+
+.screen-panel::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 18px;
+  height: 18px;
+  border-top: 2px solid #4fc3ff;
+  border-left: 2px solid #4fc3ff;
+  border-radius: 10px 0 0 0;
+}
+
+.screen-panel::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 18px;
+  height: 18px;
+  border-bottom: 2px solid #4fc3ff;
+  border-right: 2px solid #4fc3ff;
+  border-radius: 0 0 10px 0;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: bold;
+  color: #4fc3ff;
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-title::before {
+  content: "";
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(180deg, #4fc3ff, #0077ff);
+  border-radius: 2px;
+}
+
+/* 大屏数字滚动效果 */
+.screen-num {
+  font-family: "Consolas", "Courier New", monospace;
+  background: linear-gradient(180deg, #7dd3ff, #1e88ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(79, 195, 255, 0.4);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
