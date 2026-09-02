@@ -35,24 +35,37 @@ ws.onopen = async () => {
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
   await send('Page.navigate', { url: 'http://localhost:5173/' })
   await sleep(10000)
-  const home = await ev(`(() => ({
-    title: document.querySelector('.header-title')?.textContent || '',
-    sub: document.querySelector('.logo-text p')?.textContent || '',
-    clock: [...document.querySelectorAll('.timer p')].map(p => p.textContent),
-    items: [...document.querySelectorAll('.btn-groups .item p')].map(p => p.textContent),
-    dividers: document.querySelectorAll('.btn-groups .tb-divider').length,
-    btnSize: (() => { const b = document.querySelector('.btn-groups button'); return b ? [b.offsetWidth, b.offsetHeight] : null })(),
-    bell: !!document.querySelector('.event-warning')
-  }))()`)
+  const home = await ev(`(() => {
+    const t = document.querySelector('.header-title')
+    const clock = document.querySelector('.timer').getBoundingClientRect()
+    const cc = document.querySelector('.header-center').getBoundingClientRect()
+    const tc = t.getBoundingClientRect()
+    return {
+      title: t?.textContent || '',
+      sub: document.querySelector('.header-sub')?.textContent || '',
+      titleCenter: +(tc.left + tc.width / 2).toFixed(1),
+      groupCenter: +(cc.left + cc.width / 2).toFixed(1),
+      vpCenter: +(window.innerWidth / 2).toFixed(1),
+      clockLeft: +clock.left.toFixed(1),
+      clockRight: +clock.right.toFixed(1),
+      clock: [...document.querySelectorAll('.timer p')].map(p => p.textContent),
+      items: [...document.querySelectorAll('.btn-groups .item p')].map(p => p.textContent),
+      dividers: document.querySelectorAll('.btn-groups .tb-divider').length,
+      btnSize: (() => { const b = document.querySelector('.btn-groups button'); return b ? [b.offsetWidth, b.offsetHeight] : null })(),
+      bell: !!document.querySelector('.event-warning')
+    }
+  })()`)
   console.log(JSON.stringify(home, null, 1))
   const bad = []
   if (!(home.title || '').includes('智慧交通')) bad.push('标题缺失')
+  if (Math.abs(home.groupCenter - home.vpCenter) > 3) bad.push('标题组不在正中: ' + home.groupCenter + ' vs ' + home.vpCenter)
+  if (home.clockLeft > 60 || home.clockRight > 300) bad.push('时钟不在左侧: ' + home.clockLeft)
   if (home.items.length !== 10) bad.push('按钮数=' + home.items.length)
   if (home.dividers !== 2) bad.push('分隔线数=' + home.dividers)
   if (home.clock.length !== 2) bad.push('时钟缺')
   if (!home.btnSize || home.btnSize[0] < 30) bad.push('按钮尺寸=' + JSON.stringify(home.btnSize))
   if (home.bell !== true) bad.push('铃铛缺')
-  console.log(bad.length ? 'BAD: ' + bad.join('; ') : 'DOM 全部符合 V1 结构')
+  console.log(bad.length ? 'BAD: ' + bad.join('; ') : 'DOM 全部符合新布局')
   await shot('v1bar-home.png')
   // 打开「图层显示」popover 看一眼
   await ev(`(() => {

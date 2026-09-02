@@ -1,23 +1,25 @@
 
 <template>
   <header class="header">
+    <!-- 左：时钟 -->
     <div class="header-left">
-      <div class="logo">
-        <span class="logo-icon">🚦</span>
-        <div class="logo-text">
-          <h1 class="header-title">淄博市智慧交通管理系统</h1>
-          <p>ZIBO SMART TRANSPORTATION MANAGEMENT SYSTEM</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="header-right">
-      <!-- 数字时钟 -->
       <div class="timer">
         <p class="time-date">{{ time1 }}</p>
         <p class="time-clock">{{ time2 }}</p>
       </div>
     </div>
+
+    <!-- 中：标题 -->
+    <div class="header-center">
+      <div class="logo">
+        <span class="logo-icon">🚦</span>
+        <h1 class="header-title">淄博市智慧交通管理系统</h1>
+      </div>
+      <p class="header-sub">ZIBO SMART TRANSPORTATION MANAGEMENT SYSTEM</p>
+    </div>
+
+    <!-- 右：留空保持标题严格居中 -->
+    <div class="header-right"></div>
   </header>
 </template>
 
@@ -58,17 +60,17 @@ const time2 = computed(() => {
 </script>
 
 <style scoped>
-/* ===== V1 顶部栏设计风格：玻璃渐变条 + 左 logo 中英文标题 + 右时钟 ===== */
+/* ===== 顶部栏：玻璃渐变条 + 左时钟 + 居中标题 + 右留空 ===== */
 .header {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 64px;
+  box-sizing: border-box;
   z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 20px;
   background: linear-gradient(180deg, rgba(2, 16, 36, 0.92), rgba(2, 16, 36, 0.55));
   border-bottom: 1px solid rgba(56, 148, 255, 0.35);
@@ -76,22 +78,45 @@ const time2 = computed(() => {
   box-shadow: 0 2px 20px rgba(0, 100, 255, 0.15);
 }
 
-.header-left .logo {
+/* 左右伸缩区（左时钟/右留空） */
+.header-left,
+.header-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.header-right {
+  justify-content: flex-end;
+}
+
+/* 中间标题块：绝对居中，不受两侧内容宽度影响 */
+.header-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.logo {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.logo-icon {
-  font-size: 30px;
   line-height: 1;
 }
 
-.logo-text h1 {
+.logo-icon {
+  font-size: 28px;
+}
+
+.header-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
   color: #fff;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
   background: linear-gradient(90deg, #4fc3ff, #7dd3ff, #4fc3ff);
   -webkit-background-clip: text;
   background-clip: text;
@@ -100,22 +125,16 @@ const time2 = computed(() => {
   white-space: nowrap;
 }
 
-.logo-text p {
-  margin: 2px 0 0;
-  font-size: 10px;
+.header-sub {
+  margin: 4px 0 0;
+  font-size: 9px;
   color: rgba(160, 200, 255, 0.6);
-  letter-spacing: 1px;
+  letter-spacing: 2px;
   white-space: nowrap;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
 .timer {
-  text-align: right;
+  text-align: left;
   color: #7dd3ff;
   line-height: 1.2;
 }
