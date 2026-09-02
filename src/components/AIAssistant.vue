@@ -1,0 +1,571 @@
+<template>
+  <!-- ================= AI 助手 ================= -->
+  <!-- 悬浮按钮：右下角放大缩小按钮左侧 -->
+  <div class="ai-fab" :class="{ on: open }" title="AI 智能助手" @click="open = !open">
+    <span class="ai-fab-pulse" v-if="!open"></span>
+    <span class="ai-fab-logo">AI</span>
+    <span class="ai-fab-label">助手</span>
+  </div>
+
+  <!-- 对话框：悬浮按钮上方展开 -->
+  <div class="ai-panel" v-show="open" :class="{ show: open }">
+    <!-- 头部 -->
+    <div class="ai-head">
+      <div class="ai-head-logo">AI</div>
+      <div class="ai-head-info">
+        <span class="ai-head-title">AI 智能助手</span>
+        <span class="ai-head-sub">{{ modeText }}</span>
+      </div>
+      <div class="ai-dot" :class="mode"></div>
+      <div class="ai-close" @click="open = false">✕</div>
+    </div>
+
+    <!-- 消息区 -->
+    <div class="ai-msgs" ref="msgsBox">
+      <div v-if="!msgs.length" class="ai-welcome">
+        <p>你好，我是本系统的 AI 助手 🤖</p>
+        <p class="ai-welcome-sub">你可以让我：查看/关闭交通图层、切换道路分级、控制中心开合、地图缩放视角、飞到各区县，或直接跟我聊聊路况。</p>
+      </div>
+      <div
+        v-for="(m, i) in msgs"
+        :key="i"
+        class="ai-msg"
+        :class="'ai-' + m.role"
+      >{{ m.text }}</div>
+      <div v-if="busy" class="ai-msg ai-ai ai-thinking">
+        <span class="ai-dots"><i></i><i></i><i></i></span>
+      </div>
+    </div>
+
+    <!-- 快捷指令 -->
+    <div class="ai-chips" v-if="!busy">
+      <span v-for="c in chips" :key="c" class="ai-chip" @click="send(c)">{{ c }}</span>
+    </div>
+
+    <!-- 输入区 -->
+    <div class="ai-input-row">
+      <input
+        v-model="input"
+        class="ai-input"
+        placeholder="试试：显示监控探头 / 飞到临淄区 / 切换到二级道路…"
+        @keyup.enter="send(input)"
+      />
+      <button class="ai-send" :disabled="busy || !input.trim()" @click="send(input)">发送</button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { execTool, execRuleAction, LAYER_LABEL, ROAD_LABEL } from '../tools/aiExec'
+import { parseCommand } from '../tools/agent'
+
+const sm = inject('$scene_map')
+
+const KEY = import.meta.env.VITE_DEEPSEEK_KEY || ''
+const MODEL = import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat'
+const API = 'https://api.deepseek.com/chat/completions'
+
+/* ---------------- 界面状态 ---------------- */
+const open = ref(false)
+const busy = ref(false)
+const input = ref('')
+const msgsBox = ref(null)
+const msgs = reactive([]) // { role: 'user' | 'ai' | 'sys', text }
+const mode = ref('idle') // idle | llm | rule
+
+const modeText = computed(() => {
+  if (!KEY) return '未配置 Key · 离线指令模式'
+  if (mode.value === 'llm') return 'DeepSeek 在线对话 · 可自由交流'
+  if (mode.value === 'rule') return '离线指令模式（模型连不上，指令照常执行）'
+  return 'DeepSeek 就绪'
+})
+
+const chips = [
+  '显示监控探头', '关闭热力图', '切换到二级道路', '打开控制中心', '飞到临淄区', '放大地图', '淄博今天天气怎么样？'
+]
+
+const push = (role, text) => {
+  msgs.push({ role, text })
+  scrollToBottom()
+}
+const scrollToBottom = () => nextTick(() => {
+  if (msgsBox.value) msgsBox.value.scrollTop = msgsBox.value.scrollHeight
+})
+
+/* ============ 模糊意图反问确认（猜不到时按关键字问「是不是…」，用户说"是"再执行） ============ */
+// pending = { list: [{ a: 动作, desc: 描述 }], idx: 当前问到第几个 }
+const pending = ref(null)
+
+// 从文本中按关键字猜意图候选
+function guessActions(text) {
+  const closing = /(关闭|关掉|隐藏|收起|去掉)/.test(text)
+  const out = []
+  const add = (a, desc) => {
+    if (!out.some((x) => x.desc === desc)) out.push({ a, desc })
+  }
+  // 交通图层关键词
+  const LAYER_RE = [
+    [/监控|摄像|探头|camera/i, 'camera'],
+    [/信号灯|红绿灯|信号机/, 'trafficLight'],
+    [/警员|民警|警察|警力|巡逻/, 'police'],
+    [/拥堵|堵车|路况|缓行/, 'congestion'],
+    [/热力|热度|人流|热区/, 'heat'],
+    [/公交|巴士|线路/, 'busRoute'],
+    [/站牌|站点/, 'busStop'],
+    [/建筑|楼宇/, 'building'],
+    [/道路|路网/, 'mainRoad']
+  ]
+  for (const [re, name] of LAYER_RE) {
+    if (re.test(text)) add({ type: 'layer', name, visible: !closing }, `${closing ? '关闭' : '打开'}「${LAYER_LABEL[name]}」图层`)
+  }
+  // 道路分级关键词
+  const ROAD_GUESS = [
+    ['高速', 'highway'], ['快速', 'first'], ['主干', 'first'], ['一级', 'first'],
+    ['二级', 'second'], ['次干', 'second'], ['三级', 'third'], ['支路', 'third']
+  ]
+  for (const [kw, level] of ROAD_GUESS) {
+    if (text.includes(kw)) add({ type: 'road', level }, `切换到「${ROAD_LABEL[level]}」`)
+  }
+  // 区县 / 地标飞行
+  const placeHits = text.match(/张店|临淄|淄川|博山|周村|桓台|高青|沂源|淄博站|火车站|海岱楼|齐盛湖|人民公园|市政府/g)
+  if (placeHits) {
+    for (const p of [...new Set(placeHits)]) {
+      add({ type: 'map', kind: 'fly', payload: { place: p } }, `飞到「${p}」`)
+    }
+  }
+  // 控制中心
+  if (/(控制中心|图表|统计数据|数据面板|统计面板|数据中心)/.test(text)) {
+    add({ type: 'charts', open: !closing }, `${closing ? '收起' : '打开'}控制中心`)
+  }
+  return out.slice(0, 3)
+}
+
+// 抛出反问（当前问 list[idx]）
+function askGuess(list, idx) {
+  if (idx >= list.length) {
+    pending.value = null
+    push('ai', '我实在猜不到啦…换个说法试试？比如「显示监控探头」「飞到临淄区」「切换到二级道路」')
+    return
+  }
+  pending.value = { list, idx }
+  push('ai', `我猜你是不是想【${list[idx].desc}】？回复「是」我就执行；不是的话我再猜别的。`)
+}
+
+// 用户对反问的回答：true=已处理该轮；false=是条新指令，正常往下走
+function handlePendingAnswer(text) {
+  const p = pending.value
+  if (!p) return false
+  const t = text.trim()
+  const num = /^([1-3])$/.exec(t)
+  if (/^(不是|不对|算了|取消|不要|换一个|都没有|都不是|没有)/.test(t) && !num) {
+    askGuess(p.list, p.idx + 1) // 否定 → 猜下一个
+    return true
+  }
+  if (num) {
+    pending.value = null
+    const c = p.list[+num[1] - 1]
+    if (c) runConfirmed(c)
+    else askGuess(p.list, p.idx)
+    return true
+  }
+  if (/^(是|对|好|嗯|确定|没错|执行|要|可以|行|就这么办|对对|嗯嗯|OK|ok)/.test(t) && p.list[p.idx]) {
+    pending.value = null
+    runConfirmed(p.list[p.idx]) // 确认 → 执行当前候选
+    return true
+  }
+  return false // 其它输入 → 视为新指令
+}
+
+async function runConfirmed(c) {
+  let out = ''
+  try {
+    out = await execRuleAction(c.a, { map: sm.map })
+  } catch (e) {
+    out = '执行出错：' + e.message
+  }
+  push('sys', '⚙ 已按你的确认执行')
+  push('ai', out || '好的，搞定！')
+}
+
+/* ---------------- 对话 ---------------- */
+// 发给大模型的历史（角色齐全，供 tool_calls 轮询续接）
+const llmHist = []
+
+const SYSTEM = '你是「淄博市智慧交通管理系统」网页里的 AI 助手，运行在一个 WebGIS 大屏上。' +
+  '你可以通过函数工具操作页面：开关交通图层、切换道路分级、开关控制中心图表、控制地图视角缩放、飞到淄博各区县、跳转页面、查询状态。' +
+  '规则：1) 用户意图涉及页面操作时，先调用对应工具，工具结果返回后再用一句话中文回复确认结果，并补充有用信息；' +
+  '2) 涉及多个操作可一次调用多个工具；' +
+  '3) 不涉及页面操作时（闲聊、问路况、问淄博风土人情等），直接正常中文聊天，不要编造页面功能已执行；' +
+  '4) 用户指令含糊时，先用 get_status 了解当前状态，再按最可能的意图调用工具；' +
+  '5) 回答简洁友好，200 字以内。'
+
+/* 工具定义（OpenAI function-calling 格式，DeepSeek 兼容） */
+const TOOLS = [
+  { type: 'function', function: { name: 'get_status', description: '查询页面当前状态：地图缩放级别与中心、道路分级、已开启的图层、控制中心开关、天气', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'map_action', description: '控制地图视角动作', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['zoom_in', 'zoom_out', 'reset_view', 'rotate_view', 'top_view', 'tilt_view'], description: 'zoom_in=放大 zoom_out=缩小 reset_view=复位淄博全景 rotate_view=环绕旋转 top_view=俯视 tilt_view=斜视' } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'fly_to', description: '地图飞往淄博某区县或地标（张店区、临淄区、淄川区、博山区、周村区、桓台县、高青县、沂源县、淄博站、海岱楼等）', parameters: { type: 'object', properties: { place: { type: 'string', description: '地点中文名' } }, required: ['place'] } } },
+  { type: 'function', function: { name: 'set_road_class', description: '切换道路分级显示：total=总道路（全路网）、highway=高速公路、first=一级道路、second=二级道路、third=三级道路', parameters: { type: 'object', properties: { level: { type: 'string', enum: ['total', 'highway', 'first', 'second', 'third'] } }, required: ['level'] } } },
+  { type: 'function', function: { name: 'set_traffic_layer', description: '开关交通图层', parameters: { type: 'object', properties: { layer: { type: 'string', enum: ['camera', 'trafficLight', 'police', 'congestion', 'heat', 'busRoute', 'busStop', 'mainRoad', 'building'], description: 'camera=监控探头 trafficLight=信号灯 police=警员分布 congestion=道路拥堵 heat=热力图 busRoute=公交线路 busStop=公交站点 mainRoad=道路 building=城市建筑' }, on: { type: 'boolean', description: 'true=打开 false=关闭' } }, required: ['layer', 'on'] } } },
+  { type: 'function', function: { name: 'set_control_center', description: '开关控制中心（统计图表浮层）', parameters: { type: 'object', properties: { open: { type: 'boolean' } }, required: ['open'] } } },
+  { type: 'function', function: { name: 'goto_page', description: '跳转系统功能页', parameters: { type: 'object', properties: { page: { type: 'string', enum: ['home', 'rotation', 'cityview', 'eventinfo', 'areasearch', 'navigation', 'changestyle'] } }, required: ['page'] } } }
+]
+
+async function callLLM() {
+  const r = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` },
+    body: JSON.stringify({ model: MODEL, messages: llmHist, tools: TOOLS, temperature: 0.6 })
+  })
+  if (!r.ok) {
+    let msg = ''
+    try { msg = (await r.json()).error?.message || '' } catch { /* 非 JSON 错误体 */ }
+    throw new Error(`HTTP ${r.status} ${msg}`.trim())
+  }
+  return (await r.json()).choices[0].message
+}
+
+/* 大模型在线对话（带工具循环） */
+async function chatLLM(text) {
+  llmHist.push({ role: 'user', content: text })
+  for (let round = 0; round < 6; round++) {
+    const m = await callLLM()
+    if (m.content) push('ai', m.content)
+    // 保留给后续轮次的 assistant 帧（含 tool_calls）
+    llmHist.push({ role: 'assistant', content: m.content || '', tool_calls: m.tool_calls })
+    if (!m.tool_calls || !m.tool_calls.length) return
+    for (const tc of m.tool_calls) {
+      let args = {}
+      try { args = JSON.parse(tc.function.arguments || '{}') } catch { /* 参数解析失败按空 */ }
+      let out = ''
+      try {
+        out = await execTool(tc.function.name, args, { map: sm.map })
+      } catch (e) {
+        out = '执行出错：' + e.message
+      }
+      // 页面上有实际动作才落一行小字提示
+      if (!/^(未知|未找到|执行出错|地图尚未)/.test(out)) push('sys', '⚙ 已执行 · ' + out)
+      llmHist.push({ role: 'tool', tool_call_id: tc.id, content: out })
+    }
+  }
+}
+
+/* 离线指令识别（大模型 key 无效 / 断网时的降级） */
+async function chatRule(text) {
+  const a = parseCommand(text)
+  // 规则引擎也没把握（纯回复型）→ 按关键字猜意图反问用户确认
+  if (!a || a.type === 'reply') {
+    const list = guessActions(text)
+    if (list.length) return askGuess(list, 0)
+    push('ai', a ? a.reply : '我暂时没听懂，试试对我说：「显示监控探头」「飞到临淄区」「切换到二级道路」')
+    return
+  }
+  let out
+  try {
+    out = await execRuleAction(a, { map: sm.map })
+  } catch (e) {
+    out = '执行出错：' + e.message
+  }
+  push('sys', '⚙ 已执行')
+  push('ai', out || a.reply)
+}
+
+/* 发送入口 */
+async function send(raw) {
+  const text = (raw ?? input.value ?? '').trim()
+  if (!text || busy.value) return
+  input.value = ''
+  if (msgs.length > 60) msgs.splice(0, msgs.length - 60)
+  push('user', text)
+  // 上一条是反问 → 先按「是 / 不是 / 序号」处理
+  if (handlePendingAnswer(text)) return
+  pending.value = null // 反问被新指令打断
+  busy.value = true
+  try {
+    if (!KEY) throw new Error('no-key') // 未配置 key 直接走离线引擎
+    mode.value = 'llm'
+    await chatLLM(text)
+  } catch (e) {
+    mode.value = 'rule'
+    if (e.message !== 'no-key') push('sys', '⚠ 大模型连接失败，已切换离线指令识别（页面功能照常可用）')
+    await chatRule(text)
+  } finally {
+    busy.value = false
+  }
+}
+
+/* DEV 调试桥：CDP 验证脚本用 */
+onMounted(() => {
+  if (import.meta.env.DEV) {
+    window.__ai = {
+      send: (t) => send(t),
+      setOpen: (v) => { open.value = v },
+      isOpen: () => open.value,
+      msgs: () => msgs.map((m) => m.role + ':' + m.text),
+      mode: () => mode.value
+    }
+  }
+})
+onUnmounted(() => { if (window.__ai) delete window.__ai })
+</script>
+
+<style scoped>
+/* ================= 悬浮按钮（右下角，放大/缩小按钮左侧） ================= */
+.ai-fab {
+  position: fixed;
+  right: 44px;
+  bottom: 8px;
+  z-index: 200;
+  width: 66px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  user-select: none;
+  color: #fff;
+  background: linear-gradient(to bottom, rgba(0, 210, 255, 0.5), rgba(0, 90, 200, 0.62));
+  border: 1px solid rgba(120, 210, 255, 0.55);
+  box-shadow: 0 0 14px rgba(0, 170, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(6px);
+  transition: all 0.2s;
+}
+.ai-fab:hover { transform: translateY(-2px); box-shadow: 0 0 20px rgba(0, 200, 255, 0.55); }
+.ai-fab.on {
+  background: linear-gradient(to bottom, rgba(0, 200, 184, 0.65), rgba(0, 128, 160, 0.7));
+  border-color: rgba(0, 217, 201, 0.85);
+  box-shadow: 0 0 18px rgba(0, 200, 184, 0.5);
+}
+.ai-fab-logo {
+  font-size: 17px;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 1px;
+  background: linear-gradient(120deg, #fff, #9be8ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1;
+}
+.ai-fab-label { font-size: 9px; color: rgba(220, 245, 255, 0.9); line-height: 1; letter-spacing: 2px; }
+/* 呼吸光点 */
+.ai-fab-pulse {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00e5a0;
+  box-shadow: 0 0 8px #00e5a0;
+  animation: aiPulse 1.8s ease-in-out infinite;
+}
+@keyframes aiPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+/* ================= 对话框 ================= */
+.ai-panel {
+  position: fixed;
+  right: 44px;
+  bottom: 76px;
+  z-index: 210;
+  width: 350px;
+  max-width: calc(100vw - 120px);
+  height: min(560px, calc(100vh - 150px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  background: rgba(5, 18, 42, 0.94);
+  border: 1px solid rgba(56, 148, 255, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 120, 255, 0.15);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: all 0.22s ease;
+}
+.ai-panel.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(90deg, rgba(0, 120, 255, 0.22), rgba(0, 200, 184, 0.16));
+  border-bottom: 1px solid rgba(56, 148, 255, 0.35);
+}
+.ai-head-logo {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  font-style: italic;
+  background: linear-gradient(135deg, #00c8ff, #00b8a0);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(0, 200, 255, 0.45);
+}
+.ai-head-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ai-head-title { font-size: 14px; font-weight: bold; letter-spacing: 1px; }
+.ai-head-sub { font-size: 10px; color: rgba(160, 210, 255, 0.8); }
+.ai-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8e8e93;
+}
+.ai-dot.llm { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+.ai-dot.rule { background: #ff9500; box-shadow: 0 0 8px #ff9500; }
+.ai-close {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: rgba(200, 225, 255, 0.85);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  transition: all 0.15s;
+}
+.ai-close:hover { background: rgba(255, 80, 80, 0.5); color: #fff; }
+
+/* 消息区 */
+.ai-msgs {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ai-msgs::-webkit-scrollbar { width: 5px; }
+.ai-msgs::-webkit-scrollbar-thumb { background: rgba(100, 170, 255, 0.35); border-radius: 3px; }
+
+.ai-welcome { font-size: 12px; color: rgba(180, 215, 255, 0.75); line-height: 1.7; padding: 6px 2px; }
+.ai-welcome-sub { font-size: 11px; color: rgba(150, 190, 235, 0.6); }
+
+.ai-msg {
+  max-width: 88%;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  word-break: break-word;
+  white-space: pre-wrap;
+  animation: aiIn 0.18s ease;
+}
+@keyframes aiIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+.ai-user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(0, 140, 255, 0.85), rgba(0, 110, 230, 0.8));
+  border: 1px solid rgba(130, 200, 255, 0.4);
+  border-radius: 10px 3px 10px 10px;
+}
+.ai-ai {
+  align-self: flex-start;
+  background: rgba(28, 60, 110, 0.75);
+  border: 1px solid rgba(90, 150, 235, 0.3);
+  border-radius: 3px 10px 10px 10px;
+}
+.ai-sys {
+  align-self: center;
+  font-size: 10.5px;
+  color: rgba(140, 220, 210, 0.85);
+  background: rgba(0, 170, 160, 0.12);
+  border: 1px solid rgba(0, 200, 184, 0.2);
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+/* 思考动画 */
+.ai-thinking { padding: 10px 14px; }
+.ai-dots { display: inline-flex; gap: 4px; }
+.ai-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(160, 220, 255, 0.8);
+  animation: aiBounce 1s infinite;
+}
+.ai-dots i:nth-child(2) { animation-delay: 0.15s; }
+.ai-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes aiBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* 快捷指令 */
+.ai-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 12px 8px;
+  scrollbar-width: none;
+}
+.ai-chips::-webkit-scrollbar { display: none; }
+.ai-chip {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  padding: 4px 9px;
+  border-radius: 20px;
+  color: rgba(190, 225, 255, 0.9);
+  background: rgba(0, 110, 220, 0.18);
+  border: 1px solid rgba(90, 170, 255, 0.35);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.ai-chip:hover { background: rgba(0, 140, 255, 0.4); color: #fff; }
+
+/* 输入区 */
+.ai-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(56, 148, 255, 0.25);
+}
+.ai-input {
+  flex: 1;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  font-size: 12.5px;
+  color: #fff;
+  background: rgba(12, 34, 66, 0.9);
+  border: 1px solid rgba(90, 160, 255, 0.4);
+  border-radius: 8px;
+  outline: none;
+  transition: border 0.15s;
+}
+.ai-input:focus { border-color: rgba(0, 200, 255, 0.8); }
+.ai-input::placeholder { color: rgba(150, 190, 235, 0.5); }
+.ai-send {
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(0, 160, 255, 0.9), rgba(0, 130, 235, 0.85));
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 2px;
+}
+.ai-send:hover:not(:disabled) { background: linear-gradient(135deg, rgba(0, 200, 255, 0.95), rgba(0, 150, 255, 0.9)); box-shadow: 0 0 10px rgba(0, 180, 255, 0.5); }
+.ai-send:disabled { opacity: 0.45; cursor: not-allowed; }
+</style>

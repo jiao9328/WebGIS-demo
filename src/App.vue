@@ -4,6 +4,8 @@
   <RoadClassBar v-if="loadMap"></RoadClassBar>
   <RealtimeBar v-if="loadMap"></RealtimeBar>
   <BottomTools v-if="loadMap"></BottomTools>
+  <!-- AI 助手：右下角悬浮按钮 + 对话框（全局浮层，跨路由可用） -->
+  <AIAssistant v-if="loadMap"></AIAssistant>
   <RouterView></RouterView>
   <!-- 控制中心浮层：全局开关（再点控制中心才关闭），路由切换不消失 -->
   <G2Charts v-if="store.chartsOpen"></G2Charts>
@@ -23,6 +25,7 @@ import Header from './components/Header.vue'
 import RoadClassBar from './components/RoadClassBar.vue'
 import RealtimeBar from './components/RealtimeBar.vue'
 import BottomTools from './components/BottomTools.vue'
+import AIAssistant from './components/AIAssistant.vue'
 import G2Charts from './views/G2Charts.vue'
 import { store, injectStore } from './store'
 import { fetchWeather } from './tools/weather'

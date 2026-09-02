@@ -21,6 +21,7 @@ import busRoutes from '@/assets/GIS_Data/bus_routes.json'
 import busStops from '@/assets/GIS_Data/bus_stops_amap.json'
 import roadData from '@/assets/GIS_Data/Zibo_roads.json'
 import { baseLayerMap } from './initLayer'
+import { store } from '../store'
 
 /* ---------------- 数据预处理（模块加载时一次） ---------------- */
 // 数组 {lng,lat,...} → GeoJSON FeatureCollection
@@ -255,6 +256,8 @@ export function setTrafficLayerVisible(name, visible) {
     item.layer.hide()
   }
   item.visible = visible
+  // 同步到 store.trafficOn 镜像（实时数据栏点亮态 + AI 助手状态查询共用同一来源）
+  if (store && store.trafficOn) store.trafficOn[name] = visible
   return true
 }
 

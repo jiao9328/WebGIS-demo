@@ -6,6 +6,7 @@
  *   - 图表生成：18 种图表类型 × 数据主题
  */
 import { DISTRICTS, congestion } from './mockData'
+import { store } from '../store'
 
 /* ================= 18 种图表类型 ================= */
 export const CHART_TYPES = [
@@ -50,6 +51,7 @@ const THEME_ALIAS = [
 
 /* ================= 图层开关 ================= */
 const LAYER_ALIAS = [
+  ['公交站', 'busStop'], // 先于「公交」，避免 公交站点 误命中线路
   ['摄像头', 'camera'],
   ['监控', 'camera'],
   ['信号灯', 'trafficLight'],
@@ -58,9 +60,27 @@ const LAYER_ALIAS = [
   ['拥堵', 'congestion'],
   ['热力', 'heat'],
   ['公交', 'busRoute'],
+  ['站点', 'busStop'],
   ['建筑', 'building'],
   ['道路', 'mainRoad']
 ]
+
+// 图层英文 key → 中文名（回复用）
+const LAYER_LABEL = {
+  camera: '监控探头', trafficLight: '信号灯', police: '警员分布', congestion: '道路拥堵',
+  heat: '热力图', busRoute: '公交线路', busStop: '公交站点', building: '城市建筑', mainRoad: '道路图层'
+}
+
+/* ================= 道路分级（须先于图层开关：一级道路 含「道路」字样） ================= */
+const ROAD_ALIAS = [
+  ['总道路', 'total'], ['所有道路', 'total'], ['全部道路', 'total'], ['全部路网', 'total'], ['所有路网', 'total'],
+  ['高速公路', 'highway'], ['高速路', 'highway'],
+  ['一级道路', 'first'], ['快速路', 'first'], ['主干道', 'first'], ['主干路', 'first'],
+  ['二级道路', 'second'], ['次干道', 'second'], ['次干路', 'second'],
+  ['三级道路', 'third'], ['支路', 'third']
+]
+const ROAD_ALIAS_LOOSE = [['高速', 'highway'], ['一级', 'first'], ['二级', 'second'], ['三级', 'third']]
+const ROAD_LABEL = { total: '总道路', highway: '高速公路', first: '一级道路', second: '二级道路', third: '三级道路' }
 
 /* ================= 解析入口 ================= */
 export function parseCommand(text, ctx) {
@@ -80,6 +100,22 @@ export function parseCommand(text, ctx) {
     if (d) return mapAction('fly', { lng: d.center[0], lat: d.center[1], name: d.name })
     return replyAction(`暂未找到 "${target}" 的位置，试试「飞到张店区」`)
   }
+  // 道路分级：关闭/隐藏某等级 → 回到总道路；显示/切换/仅看某等级 → 该等级
+  // （须先于图层开关，否则「一级道路」会命中别名「道路」；也先于 fly 之外的通用回复）
+  const roadHit = [...ROAD_ALIAS, ...ROAD_ALIAS_LOOSE].find(([alias]) => t.includes(alias))
+  if (roadHit && /(关闭|隐藏|关掉|去掉)/.test(t)) {
+    return roadAction('total', '好的，已恢复显示总道路（全等级路网）')
+  }
+  if (roadHit && /(显示|打开|切换|只看|看看|恢复|回到|设置)/.test(t)) {
+    return roadAction(roadHit[1])
+  }
+  // 控制中心（数据图表浮层开关）
+  if (/(关闭|收起|隐藏|关掉).*(控制中心|图表|数据面板|数据中心|统计面板)/.test(t)) {
+    return chartsAction(false, '好的，已收起控制中心')
+  }
+  if (/(打开|显示|看看|查看|开启|调出).*(控制中心|数据面板|数据中心|统计面板|实时图表)/.test(t)) {
+    return chartsAction(true, '好的，已打开控制中心，可查看交通统计图表')
+  }
   // 图层开关
   const layerHit = LAYER_ALIAS.find(([alias]) => t.includes(alias))
   if (layerHit && /(打开|显示|开启|查看|展示|显示一下)/.test(t)) {
@@ -88,17 +124,24 @@ export function parseCommand(text, ctx) {
   if (layerHit && /(关闭|隐藏|关掉|去掉|隐藏一下)/.test(t)) {
     return layerAction(layerHit[1], false)
   }
-  // 图表生成
+  // 图表生成（无 LLM 时退化为打开控制中心查看统计面板）
   const chartHit = CHART_TYPES.find((c) => t.includes(c.name) || t.includes(c.key))
   if (chartHit && /(画|绘制|生成|做个|来一个|创建一个)/.test(t)) {
-    const theme = THEME_ALIAS.find(([alias]) => t.includes(alias))
-    return chartAction(chartHit, theme ? theme[1] : 'vehicle')
+    return chartAction(chartHit, THEME_ALIAS.find(([alias]) => t.includes(alias))?.[1] || 'vehicle')
   }
   if (/(画|绘制|生成|做个|来一个|创建一个).*(图|表)/.test(t)) {
     return chartAction(CHART_TYPES[0], 'vehicle')
   }
+  // 天气问答（数据来自 App 挂载时真实抓取的 store.weather）
+  if (/(天气|气温|温度|下雨|雨|雪|冷不冷|热不热|几度)/.test(t)) {
+    const w = store.weather
+    if (w && w.temperature && w.temperature !== '—') {
+      return replyAction(`淄博市当前${w.weather}，${w.temperature}℃，湿度${w.humidity}，${w.windDirection}风${w.windPower}级（${w.reportTime}）`)
+    }
+    return replyAction('天气服务暂时不可用，不过我可以帮你操作地图，比如「显示监控探头」「飞到临淄区」')
+  }
   // 默认回复
-  return replyAction('可以这样对我说：「放大地图」「飞到临淄区」「显示摄像头」「关闭信号灯」「画一个环形图 统计各区车辆」')
+  return replyAction('可以这样对我说：「放大地图」「飞到临淄区」「显示监控探头」「切换到二级道路」「打开控制中心」')
 }
 
 /* ================= 动作构造 ================= */
@@ -116,7 +159,13 @@ function mapAction(kind, payload = {}) {
   return { type: 'map', kind, payload, reply: replys[kind] }
 }
 function layerAction(name, visible) {
-  return { type: 'layer', name, visible, reply: `${visible ? '已打开' : '已关闭'}${name}` }
+  return { type: 'layer', name, visible, reply: `${visible ? '已打开' : '已关闭'}${LAYER_LABEL[name] || name}` }
+}
+function roadAction(level, reply) {
+  return { type: 'road', level, reply: reply || `好的，已切换到${ROAD_LABEL[level] || '道路分级'}` }
+}
+function chartsAction(open, reply) {
+  return { type: 'charts', open, reply }
 }
 function chartAction(chart, theme) {
   const th = THEMES[theme]

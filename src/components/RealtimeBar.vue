@@ -9,7 +9,7 @@
         v-for="row in rows"
         :key="row.key"
         class="rt-item"
-        :class="{ on: vis[row.key] }"
+        :class="{ on: store.trafficOn[row.key] }"
         @click="toggle(row)"
       >
         <i class="iconfont" :class="row.icon"></i>
@@ -22,10 +22,11 @@
   </div>
 </template>
 <script setup>
-import { inject, reactive } from 'vue'
-import { toggleTrafficLayer, isTrafficLayerVisible } from '../tools/initTrafficLayers'
+import { inject } from 'vue'
+import { setTrafficLayerVisible } from '../tools/initTrafficLayers'
 
-inject('$store')
+// 开态以 store.trafficOn 为唯一来源：手动点击与 AI 助手调图层都会同步点亮
+const { store } = inject('$store')
 
 // 图层行：复用交通图层注册表（initTrafficLayers 7 类）
 const rows = [
@@ -38,12 +39,9 @@ const rows = [
   { key: 'busStop', label: '公交站点', icon: 'icon-shoucang', dot: '#4dd8ff' },
 ]
 
-// 打开/关闭对应图层（首次打开懒建，实例保留复用）
-const vis = reactive({})
-for (const r of rows) vis[r.key] = isTrafficLayerVisible(r.key)
-
+// 打开/关闭对应图层（首次打开懒建，实例保留复用）；store 镜像随后自动更新
 const toggle = (row) => {
-  vis[row.key] = toggleTrafficLayer(row.key)
+  setTrafficLayerVisible(row.key, !store.trafficOn[row.key])
 }
 </script>
 <style scoped>

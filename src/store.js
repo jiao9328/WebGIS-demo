@@ -11,6 +11,17 @@ export const store = reactive({
   /* ---- 道路分级栏当前选中（null=总道路） ---- */
   roadClass: null, // highway | first | second | third
 
+  /* ---- 7 类交通图层开态镜像（实时数据栏 UI 与 AI 助手共用） ---- */
+  trafficOn: {
+    camera: false,
+    trafficLight: false,
+    police: false,
+    congestion: false,
+    heat: false,
+    busRoute: false,
+    busStop: false
+  },
+
   /* ---- 天气（App 挂载时真实抓取） ---- */
   weather: {
     city: '淄博市',

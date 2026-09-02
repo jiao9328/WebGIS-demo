@@ -164,6 +164,61 @@ ws.onopen = async () => {
   assert(!t1.off.vis && !t1.off.lit, '再点监控图层关闭', JSON.stringify(t1.off))
   await shot('v-realtime-on.png')
 
+  /* ========== 4b. AI 助手（右下角悬浮 + 对话驱动功能 + 关键词反问确认） ========== */
+  const fab0 = await ev(`(() => {
+    const f = document.querySelector('.ai-fab')?.getBoundingClientRect()
+    const z = document.querySelector('.l7-control-zoom')?.getBoundingClientRect()
+    return f && z ? { gap: +(z.left - f.right).toFixed(0), bottom: +f.bottom.toFixed(0) } : null
+  })()`)
+  assert(fab0 && fab0.gap > 0 && fab0.gap < 60, 'AI按钮位于放大缩小按钮左侧', JSON.stringify(fab0))
+  assert(fab0 && fab0.bottom > 850, 'AI按钮贴右下角', String(fab0?.bottom))
+  await ev(`(() => { document.querySelector('.ai-fab').click() })()`)
+  await sleep(600)
+  const pan1 = await ev(`!!document.querySelector('.ai-panel.show')`)
+  assert(pan1, '点击AI按钮打开对话框')
+  await shot('v-ai-panel.png')
+  // 对话驱动：道路分级 + 图层 + UI 点亮（走离线引擎降级通道）
+  await ev(`window.__ai.send('切换到高速公路')`)
+  await sleep(1200)
+  const ai1 = await ev(`({
+    cls: window.__roads.visible('highway'),
+    btnOn: [...document.querySelectorAll('.road-btn')].find(b => b.textContent.includes('高速公路'))?.classList.contains('on')
+  })`)
+  assert(ai1.cls && ai1.btnOn, 'AI对话切换到高速公路', JSON.stringify(ai1))
+  await ev(`window.__ai.send('显示监控探头')`)
+  await sleep(1500)
+  const ai2 = await ev(`({
+    vis: window.__traffic.visible('camera'),
+    lit: [...document.querySelectorAll('.rt-item')].find(i => i.textContent.includes('监控探头'))?.classList.contains('on')
+  })`)
+  assert(ai2.vis && ai2.lit, 'AI对话打开监控并点亮实时栏', JSON.stringify(ai2))
+  // 飞行动作（agent 解析 {lng,lat} 直飞）
+  await ev(`window.__ai.send('飞到临淄区')`)
+  await sleep(3200)
+  const ai5 = await ev(`JSON.stringify([+window.__map.getCenter().lng.toFixed(1), +window.__map.getCenter().lat.toFixed(1)])`)
+  assert(ai5 === '[118.3,36.8]', 'AI对话飞到临淄区', ai5)
+  // 关键词反问确认：听不懂 → 问"是不是想…" → 用户"是" → 执行
+  await ev(`window.__ai.send('我想看看那边的探头')`)
+  await sleep(800)
+  const ai3 = await ev(`window.__ai.msgs().slice(-1)[0] || ''`)
+  assert(ai3.includes('是不是想'), '听不懂时按关键词反问', ai3.slice(0, 80))
+  await ev(`window.__ai.send('是')`)
+  await sleep(1200)
+  const ai4 = await ev(`window.__traffic.visible('camera')`)
+  assert(ai4 === true, '回复"是"后执行对应功能', String(ai4))
+  // 控制中心开关
+  await ev(`window.__ai.send('打开控制中心')`)
+  await sleep(800)
+  assert(await ev(`!!document.querySelector('.g2-left')`), 'AI对话打开控制中心')
+  await shot('v-ai-charts.png')
+  await ev(`window.__ai.send('关闭控制中心')`)
+  await sleep(600)
+  assert(!(await ev(`!!document.querySelector('.g2-left')`)), 'AI对话关闭控制中心')
+  // 再点按钮收起对话框
+  await ev(`(() => { document.querySelector('.ai-fab').click() })()`)
+  await sleep(500)
+  assert(!(await ev(`!!document.querySelector('.ai-panel.show')`)), '再点AI按钮收起对话框')
+
   /* ========== 5. rotation（3s 内经度变化） ========== */
   await send('Page.navigate', { url: BASE + '/rotation' })
   await sleep(6000)
