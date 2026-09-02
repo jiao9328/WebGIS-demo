@@ -1,6 +1,7 @@
 <template>
   <div class="footer">
     <div class="btn-groups">
+      <!-- 视角/视图组 -->
       <RouterLink to="/" @click="reset()">
         <div class="item">
           <button class="toggle-btn">
@@ -33,6 +34,10 @@
           <p>城市视角</p>
         </div>
       </RouterLink>
+
+      <div class="tb-divider"></div>
+
+      <!-- 工具组 -->
       <el-popover placement="top" :width="100" trigger="click" popper-style="background-color: #53697670;color:#fff">
         <template #reference>
           <div class="item">
@@ -67,6 +72,10 @@
           </RouterLink>
         </div>
       </el-popover>
+
+      <div class="tb-divider"></div>
+
+      <!-- 查询/功能区 -->
       <RouterLink to="/eventinfo">
         <div class="item">
           <button class="toggle-btn">
@@ -142,58 +151,87 @@ const layers = ['camera','trafficLight','police','busRoute','congestion','heat',
 const tools = ["drawPolygonTool", "drawRectTool", "drawCircleTool", "line"];
 </script>
 <style>
+/* ===== V1 底部栏设计风格：居中悬浮玻璃胶囊 + 分组 + 圆形发光按钮 ===== */
 .footer {
-  width: 100%;
-  height: 10vh;
   position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
   z-index: 90;
-  left: 0;
-  bottom: 0;
-  background: url("../assets/images/xzd-header.png") no-repeat;
-  background-size: cover;
-  background-position: center center;
-  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  padding: 7px 16px;
+  background: rgba(5, 18, 42, 0.82);
+  border: 1px solid rgba(56, 148, 255, 0.3);
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
 }
 
 .btn-groups {
   display: flex;
+  align-items: center;
+  gap: 8px;
   color: #fff;
-  position: absolute;
-  left: 50%;
-  font-size: 8px !important;
-  bottom: 12px;
-  transform: translateX(-50%) rotate(180deg);
 }
 
 .btn-groups .item {
-  margin-left: 18px;
-  text-align: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.12s;
+}
+
+.btn-groups .item:hover {
+  transform: translateY(-2px);
+}
+
+.btn-groups .item p {
+  margin: 0;
+  font-size: 9px;
+  color: rgba(160, 200, 255, 0.75);
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .btn-groups button {
-  margin-bottom: 4px;
-  font-size: 8px;
-  /* padding: 5px; */
-  width: 25px;
-  height: 25px;
-  border: none;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
+  border: 1px solid rgba(56, 148, 255, 0.35);
   outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
   color: #fff;
-  background: #53697670;
-  /* fallback for old browsers */
-  /* Chrome 10-25, Safari 5.1-6 */
-  box-shadow: 0 0 5px 3px #333;
   background: linear-gradient(to bottom,
       rgba(0, 128, 255, 0.377),
       rgba(0, 128, 255, 0.281));
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: all 0.15s;
 }
 
 .btn-groups button:hover {
   cursor: pointer;
   background: linear-gradient(to bottom,
-      rgba(0, 128, 255, 0.6),
-      rgba(0, 128, 255, 0.281));
+      rgba(0, 190, 255, 0.5),
+      rgba(0, 128, 255, 0.4));
+  box-shadow: 0 0 10px rgba(0, 150, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 分组分隔线 */
+.tb-divider {
+  width: 1px;
+  height: 36px;
+  margin: 0 4px;
+  background: rgba(56, 148, 255, 0.25);
 }
 
 a {
