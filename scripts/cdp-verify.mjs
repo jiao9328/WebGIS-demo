@@ -197,8 +197,8 @@ ws.onopen = async () => {
   await sleep(3200)
   const ai5 = await ev(`JSON.stringify([+window.__map.getCenter().lng.toFixed(1), +window.__map.getCenter().lat.toFixed(1)])`)
   assert(ai5 === '[118.3,36.8]', 'AI对话飞到临淄区', ai5)
-  // 关键词反问确认：听不懂 → 问"是不是想…" → 用户"是" → 执行
-  await ev(`window.__ai.send('我想看看那边的探头')`)
+  // 关键词反问确认（离线引擎直测）：听不懂 → 问"是不是想…" → 用户"是" → 执行
+  await ev(`window.__ai.sendRule('我想看看那边的探头')`)
   await sleep(800)
   const ai3 = await ev(`window.__ai.msgs().slice(-1)[0] || ''`)
   assert(ai3.includes('是不是想'), '听不懂时按关键词反问', ai3.slice(0, 80))

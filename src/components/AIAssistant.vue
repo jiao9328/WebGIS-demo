@@ -63,8 +63,9 @@ import { parseCommand } from '../tools/agent'
 const sm = inject('$scene_map')
 
 const KEY = import.meta.env.VITE_DEEPSEEK_KEY || ''
-const MODEL = import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-chat'
-const API = 'https://api.deepseek.com/chat/completions'
+const MODEL = import.meta.env.VITE_DEEPSEEK_MODEL || 'deepseek-v4-pro'
+// Anthropic 兼容端点（与 Claude Code 同协议），DeepSeek 官方支持
+const API = 'https://api.deepseek.com/anthropic/v1/messages'
 
 /* ---------------- 界面状态 ---------------- */
 const open = ref(false)
@@ -76,9 +77,9 @@ const mode = ref('idle') // idle | llm | rule
 
 const modeText = computed(() => {
   if (!KEY) return '未配置 Key · 离线指令模式'
-  if (mode.value === 'llm') return 'DeepSeek 在线对话 · 可自由交流'
+  if (mode.value === 'llm') return 'Deepseek V4 Pro 在线对话 · 可自由交流'
   if (mode.value === 'rule') return '离线指令模式（模型连不上，指令照常执行）'
-  return 'DeepSeek 就绪'
+  return 'Deepseek V4 Pro 就绪'
 })
 
 const chips = [
@@ -200,52 +201,58 @@ const SYSTEM = '你是「淄博市智慧交通管理系统」网页里的 AI 助
   '4) 用户指令含糊时，先用 get_status 了解当前状态，再按最可能的意图调用工具；' +
   '5) 回答简洁友好，200 字以内。'
 
-/* 工具定义（OpenAI function-calling 格式，DeepSeek 兼容） */
+/* 工具定义（Anthropic tool_use 格式，DeepSeek anthropic 端点兼容） */
 const TOOLS = [
-  { type: 'function', function: { name: 'get_status', description: '查询页面当前状态：地图缩放级别与中心、道路分级、已开启的图层、控制中心开关、天气', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'map_action', description: '控制地图视角动作', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['zoom_in', 'zoom_out', 'reset_view', 'rotate_view', 'top_view', 'tilt_view'], description: 'zoom_in=放大 zoom_out=缩小 reset_view=复位淄博全景 rotate_view=环绕旋转 top_view=俯视 tilt_view=斜视' } }, required: ['action'] } } },
-  { type: 'function', function: { name: 'fly_to', description: '地图飞往淄博某区县或地标（张店区、临淄区、淄川区、博山区、周村区、桓台县、高青县、沂源县、淄博站、海岱楼等）', parameters: { type: 'object', properties: { place: { type: 'string', description: '地点中文名' } }, required: ['place'] } } },
-  { type: 'function', function: { name: 'set_road_class', description: '切换道路分级显示：total=总道路（全路网）、highway=高速公路、first=一级道路、second=二级道路、third=三级道路', parameters: { type: 'object', properties: { level: { type: 'string', enum: ['total', 'highway', 'first', 'second', 'third'] } }, required: ['level'] } } },
-  { type: 'function', function: { name: 'set_traffic_layer', description: '开关交通图层', parameters: { type: 'object', properties: { layer: { type: 'string', enum: ['camera', 'trafficLight', 'police', 'congestion', 'heat', 'busRoute', 'busStop', 'mainRoad', 'building'], description: 'camera=监控探头 trafficLight=信号灯 police=警员分布 congestion=道路拥堵 heat=热力图 busRoute=公交线路 busStop=公交站点 mainRoad=道路 building=城市建筑' }, on: { type: 'boolean', description: 'true=打开 false=关闭' } }, required: ['layer', 'on'] } } },
-  { type: 'function', function: { name: 'set_control_center', description: '开关控制中心（统计图表浮层）', parameters: { type: 'object', properties: { open: { type: 'boolean' } }, required: ['open'] } } },
-  { type: 'function', function: { name: 'goto_page', description: '跳转系统功能页', parameters: { type: 'object', properties: { page: { type: 'string', enum: ['home', 'rotation', 'cityview', 'eventinfo', 'areasearch', 'navigation', 'changestyle'] } }, required: ['page'] } } }
+  { name: 'get_status', description: '查询页面当前状态：地图缩放级别与中心、道路分级、已开启的图层、控制中心开关、天气', input_schema: { type: 'object', properties: {} } },
+  { name: 'map_action', description: '控制地图视角动作', input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['zoom_in', 'zoom_out', 'reset_view', 'rotate_view', 'top_view', 'tilt_view'], description: 'zoom_in=放大 zoom_out=缩小 reset_view=复位淄博全景 rotate_view=环绕旋转 top_view=俯视 tilt_view=斜视' } }, required: ['action'] } },
+  { name: 'fly_to', description: '地图飞往淄博某区县或地标（张店区、临淄区、淄川区、博山区、周村区、桓台县、高青县、沂源县、淄博站、海岱楼等）', input_schema: { type: 'object', properties: { place: { type: 'string', description: '地点中文名' } }, required: ['place'] } },
+  { name: 'set_road_class', description: '切换道路分级显示：total=总道路（全路网）、highway=高速公路、first=一级道路、second=二级道路、third=三级道路', input_schema: { type: 'object', properties: { level: { type: 'string', enum: ['total', 'highway', 'first', 'second', 'third'] } }, required: ['level'] } },
+  { name: 'set_traffic_layer', description: '开关交通图层', input_schema: { type: 'object', properties: { layer: { type: 'string', enum: ['camera', 'trafficLight', 'police', 'congestion', 'heat', 'busRoute', 'busStop', 'mainRoad', 'building'], description: 'camera=监控探头 trafficLight=信号灯 police=警员分布 congestion=道路拥堵 heat=热力图 busRoute=公交线路 busStop=公交站点 mainRoad=道路 building=城市建筑' }, on: { type: 'boolean', description: 'true=打开 false=关闭' } }, required: ['layer', 'on'] } },
+  { name: 'set_control_center', description: '开关控制中心（统计图表浮层）', input_schema: { type: 'object', properties: { open: { type: 'boolean' } }, required: ['open'] } },
+  { name: 'goto_page', description: '跳转系统功能页', input_schema: { type: 'object', properties: { page: { type: 'string', enum: ['home', 'rotation', 'cityview', 'eventinfo', 'areasearch', 'navigation', 'changestyle'] } }, required: ['page'] } }
 ]
 
 async function callLLM() {
   const r = await fetch(API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` },
-    body: JSON.stringify({ model: MODEL, messages: llmHist, tools: TOOLS, temperature: 0.6 })
+    headers: { 'Content-Type': 'application/json', 'x-api-key': KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: MODEL, max_tokens: 2048, temperature: 0.6, system: SYSTEM, tools: TOOLS, messages: llmHist })
   })
   if (!r.ok) {
     let msg = ''
     try { msg = (await r.json()).error?.message || '' } catch { /* 非 JSON 错误体 */ }
     throw new Error(`HTTP ${r.status} ${msg}`.trim())
   }
-  return (await r.json()).choices[0].message
+  const d = await r.json()
+  const blocks = d.content || []
+  return {
+    text: blocks.filter((b) => b.type === 'text').map((b) => b.text).join('').trim(),
+    // thinking 块不展示；tool_use 块逐个执行
+    toolUses: blocks.filter((b) => b.type === 'tool_use').map((b) => ({ id: b.id, name: b.name, input: b.input || {} })),
+    raw: d
+  }
 }
 
-/* 大模型在线对话（带工具循环） */
+/* 大模型在线对话（带 tool_use 工具循环） */
 async function chatLLM(text) {
+  if (llmHist.length > 48) llmHist.splice(0, llmHist.length - 40) // 老对话截断（按整轮移除）
   llmHist.push({ role: 'user', content: text })
   for (let round = 0; round < 6; round++) {
     const m = await callLLM()
-    if (m.content) push('ai', m.content)
-    // 保留给后续轮次的 assistant 帧（含 tool_calls）
-    llmHist.push({ role: 'assistant', content: m.content || '', tool_calls: m.tool_calls })
-    if (!m.tool_calls || !m.tool_calls.length) return
-    for (const tc of m.tool_calls) {
-      let args = {}
-      try { args = JSON.parse(tc.function.arguments || '{}') } catch { /* 参数解析失败按空 */ }
+    // assistant 原始消息整条入史（含 thinking/tool_use 块），后续续接必须原样保留
+    llmHist.push(m.raw)
+    if (m.text) push('ai', m.text)
+    if (!m.toolUses.length) return
+    for (const u of m.toolUses) {
       let out = ''
       try {
-        out = await execTool(tc.function.name, args, { map: sm.map })
+        out = await execTool(u.name, u.input, { map: sm.map })
       } catch (e) {
         out = '执行出错：' + e.message
       }
       // 页面上有实际动作才落一行小字提示
       if (!/^(未知|未找到|执行出错|地图尚未)/.test(out)) push('sys', '⚙ 已执行 · ' + out)
-      llmHist.push({ role: 'tool', tool_call_id: tc.id, content: out })
+      llmHist.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: u.id, content: out }] })
     }
   }
 }
@@ -299,6 +306,8 @@ onMounted(() => {
   if (import.meta.env.DEV) {
     window.__ai = {
       send: (t) => send(t),
+      // 强制走离线规则引擎（验证反问确认流等确定性行为）
+      sendRule: (t) => chatRule(t),
       setOpen: (v) => { open.value = v },
       isOpen: () => open.value,
       msgs: () => msgs.map((m) => m.role + ':' + m.text),
