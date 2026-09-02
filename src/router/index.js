@@ -20,21 +20,10 @@ const router = createRouter({
       component: () => import("../views/CityView.vue")
     },
     {
-      path: '/g2charts',
-      name: 'g2charts',
-      component: () => import("../views/G2Charts.vue")
-    },
-    {
       path: '/mapdraw/:type',
       name: 'mapdraw',
       props:true,
       component: () => import("../views/MapDraw.vue")
-    },
-    {
-      path: '/layerdisplay/:type',
-      name: 'layerdisplay',
-      props:true,
-      component: () => import("../views/LayerDisplay.vue")
     },
     {
       path: '/eventinfo',

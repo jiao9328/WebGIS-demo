@@ -18,14 +18,13 @@
           <p>地球自转</p>
         </div>
       </RouterLink>
-      <RouterLink to="/g2charts">
-        <div class="item">
-          <button class="toggle-btn">
-            <i class="iconfont icon-supervision-full"></i>
-          </button>
-          <p>控制中心</p>
-        </div>
-      </RouterLink>
+      <!-- 控制中心：开关式浮层（点其它按钮不关闭，再点本按钮才关闭） -->
+      <div class="item" :class="{ on: store.chartsOpen }" @click="toggleCharts">
+        <button class="toggle-btn">
+          <i class="iconfont icon-supervision-full"></i>
+        </button>
+        <p>控制中心</p>
+      </div>
       <RouterLink to="/cityview">
         <div class="item">
           <button class="toggle-btn">
@@ -55,24 +54,6 @@
           </RouterLink>
         </div>
       </el-popover>
-      <el-popover placement="top" :width="100" trigger="click" popper-style="background-color: #53697670;color:#fff;width:auto" >
-        <template #reference>
-          <div class="item">
-            <button class="toggle-btn">
-              <i class="iconfont icon-layers"></i>
-            </button>
-            <p>图层显示</p>
-          </div>
-        </template>
-        <div class="popover-w">
-          <RouterLink v-for="(item, index) in layers" :key="index" :to='"/layerdisplay/" + item'
-            style="display: flex;justify-content: center;align-items: center;flex-direction: column;">
-            <i :class="computeClass(item)" style="margin: 2px;"></i>
-            <p style="font-size: 5px;">{{ layerName[index] }}</p>
-          </RouterLink>
-        </div>
-      </el-popover>
-
       <div class="tb-divider"></div>
 
       <!-- 查询/功能区 -->
@@ -113,13 +94,11 @@
 </template>
 <script setup>
 import { RouterLink } from "vue-router";
-import { onMounted,ref,inject } from "vue";
+import { inject } from "vue";
 // 坑1修复：注入的是 App.vue setup 同步创建的 reactive 容器，mounted 时可能尚未赋值，
 // 使用时统一取 sm.map / sm.scene（地图就绪后必有值）
 const sm = inject("$scene_map");
-onMounted(() => {
-  console.log("BottomTools mounted");
-});
+const { store } = inject("$store");
 const reset = () => {
   const map = sm.map;
   if (!map) return;
@@ -127,14 +106,9 @@ const reset = () => {
   map.setZoom(9.5);
   map.setPitch(0);
 };
-const popoverVisible = ref(false);
-
-const showPopover = () => {
-  popoverVisible.value = true;
-};
-
-const hidePopover = () => {
-  popoverVisible.value = false;
+// 控制中心浮层开关：再点一次才关闭，点其它按钮不关闭
+const toggleCharts = () => {
+  store.chartsOpen = !store.chartsOpen;
 };
 const computeClass = (item) => {
   // 交通图层名 → 实际 iconfont 类名（iconfont 无同名图标，做近似映射）
@@ -145,9 +119,6 @@ const computeClass = (item) => {
   return "iconfont query-item icon-" + (ICON_MAP[item] || item);
 };
 const toolName = ['多边形','矩形','圆形','线']
-// 7 类交通图层（对应 /layerdisplay/:type 与 initTrafficLayers 注册表）
-const layerName = ['监控探头','信号灯','警员分布','公交线路','道路拥堵','热力图','公交站点']
-const layers = ['camera','trafficLight','police','busRoute','congestion','heat','busStop']
 const tools = ["drawPolygonTool", "drawRectTool", "drawCircleTool", "line"];
 </script>
 <style>
@@ -224,6 +195,19 @@ const tools = ["drawPolygonTool", "drawRectTool", "drawCircleTool", "line"];
       rgba(0, 190, 255, 0.5),
       rgba(0, 128, 255, 0.4));
   box-shadow: 0 0 10px rgba(0, 150, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* 开关型按钮（控制中心）点亮态 */
+.btn-groups .item.on button {
+  background: linear-gradient(to bottom,
+      rgba(0, 210, 255, 0.7),
+      rgba(0, 128, 255, 0.6));
+  border-color: rgba(140, 210, 255, 0.8);
+  box-shadow: 0 0 12px rgba(0, 180, 255, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.btn-groups .item.on p {
+  color: #7dd3ff;
 }
 
 /* 分组分隔线 */

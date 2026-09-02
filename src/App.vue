@@ -1,27 +1,32 @@
 <template>
   <div id="map"></div>
   <Header></Header>
-  <EventWarning />
+  <RoadClassBar v-if="loadMap"></RoadClassBar>
+  <RealtimeBar v-if="loadMap"></RealtimeBar>
   <BottomTools v-if="loadMap"></BottomTools>
   <RouterView></RouterView>
+  <!-- 控制中心浮层：全局开关（再点控制中心才关闭），路由切换不消失 -->
+  <G2Charts v-if="store.chartsOpen"></G2Charts>
 </template>
 <script setup>
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { onMounted, onUnmounted, provide, reactive, ref } from "vue";
+import { onMounted, provide, reactive, ref } from "vue";
 import { Scene } from "@antv/l7";
 import { Mapbox } from "@antv/l7-maps";
 import { RouterView } from 'vue-router'
 import initControl from './tools/initControl'
 import initLayer from './tools/initLayer'
 import { initTrafficLayers } from './tools/initTrafficLayers'
+import { initRoadClassLayers } from './tools/roadClassLayers'
 import Header from './components/Header.vue'
-import EventWarning from './components/EventWarning.vue'
+import RoadClassBar from './components/RoadClassBar.vue'
+import RealtimeBar from './components/RealtimeBar.vue'
 import BottomTools from './components/BottomTools.vue'
-import { store, startTicker, injectStore } from './store'
+import G2Charts from './views/G2Charts.vue'
+import { store, injectStore } from './store'
 import { fetchWeather } from './tools/weather'
 import { speak } from './tools/speech'
-import { DISTRICTS, ROAD_NAMES } from './tools/mockData'
 const loadMap = ref(false);
 
 // 坑1修复：setup 同步 provide 响应式容器（Vue3 子组件 onMounted 先于父组件执行，
@@ -78,6 +83,7 @@ const initMap = () => {
   initControl(scene, map)
   initLayer(scene)
   initTrafficLayers(scene)
+  initRoadClassLayers(scene)
   loadMap.value = true
   // 响应式容器赋值（子组件 mounted 时注入的引用同步生效）
   sceneMap.scene = scene
@@ -89,47 +95,13 @@ const initMap = () => {
   }
 };
 
-// 定时模拟新事件 → 语音播报 + 事件警告（v1 App.vue 移植）
-const EVENT_TYPES = [
-  ['交通事故', '发生一起追尾事故，请过往车辆减速慢行'],
-  ['交通管制', '实施临时交通管制，请提前绕行'],
-  ['设备故障', '监测到道路监控设备故障，已派单处置'],
-  ['道路施工', '道路施工占道，请注意避让']
-]
-let eventTimer = null
-
 onMounted(async () => {
   initMap();
-  startTicker()
   // 天气（真实抓取，失败自动回退占位数据）
   store.weather = await fetchWeather()
   // 开场播报
   speak('淄博智慧交通管理系统已就绪，实时监控全市道路运行状态')
-
-  // 定时器：每 45s 随机一条新警情
-  eventTimer = setInterval(() => {
-    const i = Math.floor(Math.random() * EVENT_TYPES.length)
-    const d = DISTRICTS[Math.floor(Math.random() * DISTRICTS.length)]
-    // 事件路名取自真实 OSM 路网（Zibo_roads.json 带名称的主干道）
-    const road = ROAD_NAMES[Math.floor(Math.random() * ROAD_NAMES.length)]
-    const ev = {
-      id: 'EV' + Date.now(),
-      type: ['事故', '管制', '故障', '施工'][i],
-      title: `${EVENT_TYPES[i][0]}｜${d.name}${road}路段`,
-      desc: EVENT_TYPES[i][1],
-      time: new Date(),
-      read: false
-    }
-    store.events.unshift(ev)
-    store.unreadCount = store.events.filter((e) => !e.read).length
-    speak(`请注意！${d.name}${road}路段${EVENT_TYPES[i][1]}`)
-  }, 45000)
 });
-
-onUnmounted(() => {
-  if (eventTimer) clearInterval(eventTimer)
-  eventTimer = null
-})
 </script>
 <style>
 #map {
