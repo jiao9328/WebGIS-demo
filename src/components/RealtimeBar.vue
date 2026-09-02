@@ -1,8 +1,10 @@
 <template>
-  <div class="rt-panel">
+  <!-- 展开态：左上实时数据栏 -->
+  <div class="rt-panel" v-show="show">
     <div class="rt-title">
       <i class="iconfont icon-supervision-full"></i>
       <span>实时数据</span>
+      <span class="rt-close" title="收起实时数据栏" @click="show = false">✕</span>
     </div>
     <div class="rt-list">
       <div
@@ -20,13 +22,19 @@
       </div>
     </div>
   </div>
+  <!-- 收起态：仅剩一个小标签，可再点开 -->
+  <div class="rt-tab" v-if="!show" title="打开实时数据栏" @click="show = true">
+    <i class="iconfont icon-supervision-full"></i>
+    <span>实时数据</span>
+  </div>
 </template>
 <script setup>
-import { inject } from 'vue'
+import { inject, ref } from 'vue'
 import { setTrafficLayerVisible } from '../tools/initTrafficLayers'
 
 // 开态以 store.trafficOn 为唯一来源：手动点击与 AI 助手调图层都会同步点亮
 const { store } = inject('$store')
+const show = ref(true)
 
 // 图层行：复用交通图层注册表（initTrafficLayers 7 类）
 const rows = [
@@ -73,6 +81,60 @@ const toggle = (row) => {
   padding-bottom: 8px;
   margin-bottom: 6px;
   border-bottom: 1px solid rgba(56, 148, 255, 0.25);
+}
+
+/* 右上角关闭按钮 */
+.rt-close {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: normal;
+  letter-spacing: 0;
+  color: rgba(200, 225, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.rt-close:hover {
+  background: rgba(255, 90, 90, 0.55);
+  color: #fff;
+}
+
+/* 收起后的小标签（同一位置） */
+.rt-tab {
+  position: fixed;
+  left: 1%;
+  top: 11%;
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  color: #7dd3ff;
+  font-size: 13px;
+  letter-spacing: 2px;
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(5, 18, 42, 0.62);
+  border: 1px solid rgba(56, 148, 255, 0.3);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  transition: all 0.15s;
+}
+.rt-tab:hover {
+  background: rgba(0, 90, 200, 0.5);
+  border-color: rgba(120, 200, 255, 0.6);
+  color: #fff;
+}
+.rt-tab .iconfont {
+  font-size: 15px;
 }
 
 .rt-list {

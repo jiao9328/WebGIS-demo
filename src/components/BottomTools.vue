@@ -74,20 +74,19 @@
           <p>导航</p>
         </div>
       </RouterLink>
-      <RouterLink to="/changestyle">
-        <div class="item">
-          <button class="toggle-btn">
-            <i class="iconfont icon-tucengfengge"></i>
-          </button>
-          <p>切换风格</p>
-        </div>
-      </RouterLink>
+      <!-- 切换风格：点一下进入风格页可切换；在风格页再点一下即关闭退出 -->
+      <div class="item" :class="{ on: styleOpen }" @click="toggleStyle">
+        <button class="toggle-btn">
+          <i class="iconfont icon-tucengfengge"></i>
+        </button>
+        <p>切换风格</p>
+      </div>
     </div>
   </div>
 </template>
 <script setup>
-import { RouterLink } from "vue-router";
-import { inject } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { computed, inject } from "vue";
 // 坑1修复：注入的是 App.vue setup 同步创建的 reactive 容器，mounted 时可能尚未赋值，
 // 使用时统一取 sm.map / sm.scene（地图就绪后必有值）
 const sm = inject("$scene_map");
@@ -102,6 +101,13 @@ const reset = () => {
 // 控制中心浮层开关：再点一次才关闭，点其它按钮不关闭
 const toggleCharts = () => {
   store.chartsOpen = !store.chartsOpen;
+};
+// 切换风格开关：进入风格页可点选；已在风格页时再点一次即关闭退出
+const route = useRoute()
+const router = useRouter()
+const styleOpen = computed(() => route.path === '/changestyle')
+const toggleStyle = () => {
+  router.push(styleOpen.value ? '/' : '/changestyle')
 };
 const computeClass = (item) => {
   // 交通图层名 → 实际 iconfont 类名（iconfont 无同名图标，做近似映射）

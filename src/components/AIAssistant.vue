@@ -37,20 +37,22 @@
       </div>
     </div>
 
-    <!-- 快捷指令 -->
+    <!-- 快捷指令：点一下先填入输入框，点「发送」后实现对应功能 -->
     <div class="ai-chips" v-if="!busy">
-      <span v-for="c in chips" :key="c" class="ai-chip" @click="send(c)">{{ c }}</span>
+      <span class="ai-chips-tip">你可以说：</span>
+      <span v-for="c in chips" :key="c" class="ai-chip" @click="fillChip(c)">{{ c }}</span>
     </div>
 
     <!-- 输入区 -->
     <div class="ai-input-row">
       <input
+        ref="inputBox"
         v-model="input"
         class="ai-input"
         placeholder="试试：显示监控探头 / 飞到临淄区 / 切换到二级道路…"
-        @keyup.enter="send(input)"
+        @keyup.enter="send()"
       />
-      <button class="ai-send" :disabled="busy || !input.trim()" @click="send(input)">发送</button>
+      <button class="ai-send" :disabled="busy || !input.trim()" @click="send()">发送</button>
     </div>
   </div>
 </template>
@@ -71,6 +73,7 @@ const API = 'https://api.deepseek.com/anthropic/v1/messages'
 const open = ref(false)
 const busy = ref(false)
 const input = ref('')
+const inputBox = ref(null)
 const msgsBox = ref(null)
 const msgs = reactive([]) // { role: 'user' | 'ai' | 'sys', text }
 const mode = ref('idle') // idle | llm | rule
@@ -83,8 +86,15 @@ const modeText = computed(() => {
 })
 
 const chips = [
-  '显示监控探头', '关闭热力图', '切换到二级道路', '打开控制中心', '飞到临淄区', '放大地图', '淄博今天天气怎么样？'
+  '显示监控探头', '切换到二级道路', '打开控制中心', '区域搜索淄博市', '切换卫星影像',
+  '导航到博山区', '测量矩形', '飞到临淄区', '飞到张南路', '淄博今天天气怎么样？'
 ]
+
+// 点击快捷指令：把按钮文字自动填入输入框（发送后实现对应功能）
+const fillChip = (c) => {
+  input.value = c
+  inputBox.value?.focus()
+}
 
 const push = (role, text) => {
   msgs.push({ role, text })
@@ -199,17 +209,24 @@ const SYSTEM = '你是「淄博市智慧交通管理系统」网页里的 AI 助
   '2) 涉及多个操作可一次调用多个工具；' +
   '3) 不涉及页面操作时（闲聊、问路况、问淄博风土人情等），直接正常中文聊天，不要编造页面功能已执行；' +
   '4) 用户指令含糊时，先用 get_status 了解当前状态，再按最可能的意图调用工具；' +
-  '5) 回答简洁友好，200 字以内。'
+  '5) 能落到页面二级功能就落到二级：打开某图层时地图会自动飞过去看清该图层；区域搜索某地区用 area_search；' +
+  '换风格用 change_style；测量用 map_measure；导航去某地用 start_navigation；' +
+  '飞往地点可精确到区县、某条道路（张南路）、某家医院/学校/商场等，用 fly_to；' +
+  '6) 回答简洁友好，200 字以内。'
 
 /* 工具定义（Anthropic tool_use 格式，DeepSeek anthropic 端点兼容） */
 const TOOLS = [
   { name: 'get_status', description: '查询页面当前状态：地图缩放级别与中心、道路分级、已开启的图层、控制中心开关、天气', input_schema: { type: 'object', properties: {} } },
   { name: 'map_action', description: '控制地图视角动作', input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['zoom_in', 'zoom_out', 'reset_view', 'rotate_view', 'top_view', 'tilt_view'], description: 'zoom_in=放大 zoom_out=缩小 reset_view=复位淄博全景 rotate_view=环绕旋转 top_view=俯视 tilt_view=斜视' } }, required: ['action'] } },
-  { name: 'fly_to', description: '地图飞往淄博某区县或地标（张店区、临淄区、淄川区、博山区、周村区、桓台县、高青县、沂源县、淄博站、海岱楼等）', input_schema: { type: 'object', properties: { place: { type: 'string', description: '地点中文名' } }, required: ['place'] } },
+  { name: 'fly_to', description: '地图飞往并聚焦任意地点：淄博区县（张店区/临淄区等）、道路（张南路/青银高速等）、地标（淄博站/海岱楼/齐盛湖公园）、POI（医院/博物馆/景点/商场/小区/住宅），以及学校等任意具体地名（会在线查询），未命中会返回候选名', input_schema: { type: 'object', properties: { place: { type: 'string', description: '地点中文名：区县、道路名、POI 名或任意地名' } }, required: ['place'] } },
   { name: 'set_road_class', description: '切换道路分级显示：total=总道路（全路网）、highway=高速公路、first=一级道路、second=二级道路、third=三级道路', input_schema: { type: 'object', properties: { level: { type: 'string', enum: ['total', 'highway', 'first', 'second', 'third'] } }, required: ['level'] } },
   { name: 'set_traffic_layer', description: '开关交通图层', input_schema: { type: 'object', properties: { layer: { type: 'string', enum: ['camera', 'trafficLight', 'police', 'congestion', 'heat', 'busRoute', 'busStop', 'mainRoad', 'building'], description: 'camera=监控探头 trafficLight=信号灯 police=警员分布 congestion=道路拥堵 heat=热力图 busRoute=公交线路 busStop=公交站点 mainRoad=道路 building=城市建筑' }, on: { type: 'boolean', description: 'true=打开 false=关闭' } }, required: ['layer', 'on'] } },
   { name: 'set_control_center', description: '开关控制中心（统计图表浮层）', input_schema: { type: 'object', properties: { open: { type: 'boolean' } }, required: ['open'] } },
-  { name: 'goto_page', description: '跳转系统功能页', input_schema: { type: 'object', properties: { page: { type: 'string', enum: ['home', 'rotation', 'cityview', 'eventinfo', 'areasearch', 'navigation', 'changestyle'] } }, required: ['page'] } }
+  { name: 'goto_page', description: '跳转系统功能页', input_schema: { type: 'object', properties: { page: { type: 'string', enum: ['home', 'rotation', 'cityview', 'eventinfo', 'areasearch', 'navigation', 'changestyle'] } }, required: ['page'] } },
+  { name: 'area_search', description: '区域搜索：搜索某个城市/行政区的边界轮廓并展示（相当于进入区域搜索页直接搜索）。keyword 传中文地区名，如 淄博市、山东省、济南市', input_schema: { type: 'object', properties: { keyword: { type: 'string', description: '地区中文名，至少要市级' } }, required: ['keyword'] } },
+  { name: 'change_style', description: '切换地图风格（相当于切换风格页点选某一风格）', input_schema: { type: 'object', properties: { style: { type: 'string', enum: ['街道风格', '高对比度街道风格', '深色风格', '卫星影像', '地形风格', '高清街道风格', '夜间街道风格', '导航风格（白天）', '导航风格（夜间）', '海图风格'] } }, required: ['style'] } },
+  { name: 'map_measure', description: '打开地图测量工具（相当于底部「地图测量」弹层选一种工具）：多边形面积/矩形面积/圆形面积/线段距离', input_schema: { type: 'object', properties: { tool: { type: 'string', enum: ['drawPolygonTool', 'drawRectTool', 'drawCircleTool', 'line'], description: 'drawPolygonTool=多边形 drawRectTool=矩形 drawCircleTool=圆形 line=线段' } }, required: ['tool'] } },
+  { name: 'start_navigation', description: '路线导航：进入导航页并自动把起终点定位填入输入框、缩放到线路（与手动点击导航后输入起终点效果一样）。用户说「从A导航到B」时 origin 传 A、destination 传 B；只说了「导航到B」则 origin 可省略', input_schema: { type: 'object', properties: { origin: { type: 'string', description: '起点中文地名，如 张店区、淄博站；用户没说起点时可省略（默认淄博站）' }, destination: { type: 'string', description: '终点中文地名，必填，如 博山区' } }, required: ['destination'] } }
 ]
 
 async function callLLM() {
@@ -527,6 +544,16 @@ onUnmounted(() => { if (window.__ai) delete window.__ai })
   scrollbar-width: none;
 }
 .ai-chips::-webkit-scrollbar { display: none; }
+/* 「你可以说：」前缀 */
+.ai-chips-tip {
+  flex: 0 0 auto;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(150, 200, 255, 0.85);
+  line-height: 22px;
+  padding-left: 2px;
+  white-space: nowrap;
+}
 .ai-chip {
   flex: 0 0 auto;
   font-size: 10.5px;

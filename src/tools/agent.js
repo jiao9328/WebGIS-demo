@@ -93,12 +93,24 @@ export function parseCommand(text, ctx) {
   if (/(旋转|环绕|转一圈)/.test(t)) return mapAction('rotate')
   if (/(俯视|俯视角)/.test(t)) return mapAction('top')
   if (/(斜视|倾斜|45)/.test(t)) return mapAction('tilt')
-  if (/(飞到|定位|去|前往)(.+)/.test(t)) {
+  // 二级功能：导航到某地（须先于 fly 规则，防「去」字命中）
+  const navHit = t.match(/(导航到|导航去|导航至|规划路线到)(.+)/)
+  if (navHit) {
+    const place = navHit[2].trim()
+    if (place) {
+      // 可带起点：「从张店区导航到博山区」→ origin=张店区；未提起点则执行器默认淄博站
+      const fromHit = t.match(/(?:从|自)([^，。！？\s]{1,12}?)(?:出发|开始|走|去|到|前往|至|导航)/)
+      return { type: 'navigate', place, origin: fromHit ? fromHit[1].trim() : '' }
+    }
+  }
+  if (/(飞到|飞往|定位|去|前往)(.+)/.test(t)) {
     // $1 是动词，地名在第二个捕获组
-    const target = RegExp.$2.trim()
+    const target = RegExp.$2.replace(/[，。！？!?、\s]+$/, '').trim()
+    if (!target) return replyAction('想飞到哪？告诉我地名，比如「飞到临淄区」「飞到张南路」')
     const d = DISTRICTS.find((x) => target.includes(x.name.replace('区', '').replace('县', '')) || target.includes(x.name.slice(0, 2)))
     if (d) return mapAction('fly', { lng: d.center[0], lat: d.center[1], name: d.name })
-    return replyAction(`暂未找到 "${target}" 的位置，试试「飞到张店区」`)
+    // 非区县：交给执行器做多级解析（道路 → 医院商场小区等 POI → 在线地理编码兜底）
+    return { type: 'map', kind: 'fly', payload: { place: target }, reply: `正在查找「${target}」…` }
   }
   // 道路分级：关闭/隐藏某等级 → 回到总道路；显示/切换/仅看某等级 → 该等级
   // （须先于图层开关，否则「一级道路」会命中别名「道路」；也先于 fly 之外的通用回复）
@@ -116,6 +128,27 @@ export function parseCommand(text, ctx) {
   if (/(打开|显示|看看|查看|开启|调出).*(控制中心|数据面板|数据中心|统计面板|实时图表)/.test(t)) {
     return chartsAction(true, '好的，已打开控制中心，可查看交通统计图表')
   }
+  // 二级功能：切换地图风格（与切换风格页点选同一套）
+  if (/(风格|地图|背景|换成|切换|变|调|用|搞成)/.test(t)) {
+    const STYLE_RULES = [
+      ['高对比', '高对比度街道风格'], ['夜间街道', '夜间街道风格'], ['夜间导航', '导航风格（夜间）'],
+      ['导航风格', '导航风格（白天）'], ['卫星', '卫星影像'], ['影像', '卫星影像'],
+      ['深色', '深色风格'], ['暗色', '深色风格'], ['海图', '海图风格'], ['地形', '地形风格'],
+      ['高清', '高清街道风格'], ['街道', '街道风格']
+    ]
+    const sh = STYLE_RULES.find(([kw]) => t.includes(kw))
+    if (sh) return { type: 'style', style: sh[1] }
+  }
+  // 二级功能：区域搜索（与区域搜索页同一套：行政边界 + 天气）
+  const areaHit = t.match(/区域搜索(.+)|(?:搜索|查一下|查查|查)([^，。！？\s]{2,12})(?:的)?(?:区域|范围|边界|轮廓|行政区|市区|界)/)
+  if (areaHit) {
+    const kw = (areaHit[1] || areaHit[2] || '').trim()
+    if (kw && kw.length >= 2) return { type: 'areasearch', keyword: kw }
+  }
+  // 二级功能：地图测量工具（与地图测量弹层同款）
+  const TOOL_HIT = [['多边形', 'drawPolygonTool'], ['矩形', 'drawRectTool'], ['圆形', 'drawCircleTool'], ['线', 'line']]
+  const th = TOOL_HIT.find(([kw]) => t.includes(kw))
+  if (th && /(测量|测距|量一下|量一量|距离|长度)/.test(t)) return { type: 'measure', tool: th[1] }
   // 图层开关
   const layerHit = LAYER_ALIAS.find(([alias]) => t.includes(alias))
   if (layerHit && /(打开|显示|开启|查看|展示|显示一下)/.test(t)) {

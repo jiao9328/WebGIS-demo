@@ -11,9 +11,9 @@
  * 图层 / 道路分级 / 控制中心操作内部自带 scene 引用（对应 init*.js 模块）。
  */
 import { store } from '../store'
-import { DISTRICTS } from './mockData'
 import { selectRoadClass } from './roadClassLayers'
 import { setTrafficLayerVisible, isTrafficLayerVisible } from './initTrafficLayers'
+import { resolvePlace, suggestPlaces, geocodeOnline } from './places'
 import router from '../router'
 
 const ZB_CENTER = [118.05, 36.81]
@@ -29,29 +29,29 @@ const PAGE_LABEL = {
   areasearch: '区域搜索', navigation: '导航', changestyle: '切换风格'
 }
 
-/* 可飞往地点：八区县（mockData）+ 常用地标 */
-export const PLACES = [
-  ...DISTRICTS.map((d) => ({ name: d.name, center: d.center })),
-  { name: '淄博站', center: [118.062, 36.778] },
-  { name: '火车站', center: [118.062, 36.778] },
-  { name: '淄博北站', center: [118.058, 36.862] },
-  { name: '海岱楼', center: [118.032, 36.844] },
-  { name: '齐盛湖公园', center: [118.03, 36.842] },
-  { name: '人民公园', center: [118.055, 36.817] },
-  { name: '淄博市政府', center: [118.055, 36.813] }
-]
-const findPlace = (kw = '') => {
-  const k = String(kw).trim()
-  if (!k) return null
-  // 区县名去 区/县 后缀后按前两字匹配（张店区 ↔ 张店）
-  const short = k.replace(/[区县]$/, '')
-  return PLACES.find(
-    (p) => p.name.includes(k) || k.includes(p.name) || k.includes(p.name.replace(/[区县]$/, '')) || p.name.includes(short)
-  )
+/* 与 ChangeStyle.vue mapStyles 同序同名的风格列表 */
+export const STYLE_LABELS = ['街道风格', '高对比度街道风格', '深色风格', '卫星影像', '地形风格', '高清街道风格', '夜间街道风格', '导航风格（白天）', '导航风格（夜间）', '海图风格']
+
+/* 测量工具（BottomTools 地图测量弹层同款路由） */
+const MEASURE_TOOL_ZH = { drawPolygonTool: '多边形', drawRectTool: '矩形', drawCircleTool: '圆形', line: '线段' }
+
+/* 图层打开时的自动取景缩放（AI 打开图层后飞到能看清该图层的视角） */
+const AUTO_FIT_ZOOM = { building: 9.6, mainRoad: 9.8 }
+const fitToLayer = (map, layer) => {
+  if (!map) return
+  map.flyTo({
+    center: ZB_CENTER,
+    zoom: AUTO_FIT_ZOOM[layer] || 10.2,
+    pitch: 40,
+    duration: 1400
+  })
 }
 
+/* 可飞往地点：快表（区县/地标）由 places.js 统一管理 */
+export { PLACES } from './places'
+
 /* ---------------- 地图操作 ---------------- */
-function mapOp(map, kind, payload = {}) {
+async function mapOp(map, kind, payload = {}) {
   if (!map) return '地图尚未就绪，请稍后再试'
   switch (kind) {
     case 'zoom_in':
@@ -73,10 +73,26 @@ function mapOp(map, kind, payload = {}) {
       map.setPitch(55)
       return '已切换到斜视视角'
     case 'fly': {
-      const p = findPlace(payload.place)
-      if (!p) return `未找到「${payload.place || ''}」的位置，试试：张店区、临淄区、淄博站、海岱楼`
-      map.flyTo({ center: p.center, zoom: 12, pitch: 45, duration: 2000 })
-      return `正在飞往 ${p.name}`
+      const kw = String(payload.place || '').trim()
+      if (!kw) return '你想飞到哪？告诉我地名，比如「飞到临淄区」「飞到张南路」「飞到齐都医院」'
+      // 本地多级命中：区县/地标 → 道路 → POI（医院/博物馆/景点/商场/小区）
+      const p = resolvePlace(kw)
+      if (p) {
+        map.flyTo({ center: p.center, zoom: p.zoom, pitch: 45, duration: 2000 })
+        return `已飞到「${p.name}」（${p.kind}）`
+      }
+      // 在线兜底：学校等本地没有点数据的地方（3.5s 超时）
+      const net = await geocodeOnline(kw)
+      if (net) {
+        map.flyTo({ center: net.center, zoom: 15, pitch: 45, duration: 2000 })
+        return `已飞到「${kw}」（${net.kind}）`
+      }
+      // 都没找到：给本地候选，方便用户确认
+      const sg = suggestPlaces(kw)
+      if (sg.length) {
+        return `本地没找到「${kw}」，你是不是想找：${sg.map((s) => `${s.name}（${s.kind}）`).join('、')}？对我说「飞到+名字」就能过去`
+      }
+      return `未找到「${kw}」，试试：张店区、临淄区、张南路、海岱楼、齐都医院`
     }
     default:
       return `不支持的地图操作：${kind}`
@@ -127,10 +143,11 @@ const toolImpl = {
     return `道路已切换为：${ROAD_LABEL[level] || level}`
   },
 
-  /** 交通图层开关 */
-  set_traffic_layer({ layer, on }) {
+  /** 交通图层开关（打开时自动飞到能看清该图层的视角） */
+  set_traffic_layer({ layer, on }, ctx) {
     const ok = setTrafficLayerVisible(layer, !!on)
     if (!ok) return `未知图层：${layer}`
+    if (on) fitToLayer(ctx.map, layer)
     return `${on ? '已打开' : '已关闭'}${LAYER_LABEL[layer] || layer}图层`
   },
 
@@ -146,6 +163,41 @@ const toolImpl = {
     if (!map[page]) return `未知页面：${page}`
     router.push(map[page])
     return `已跳转到「${PAGE_LABEL[page]}」页面`
+  },
+
+  /** 区域搜索：进入区域搜索页并搜索该地区（与底部功能栏操作同一套流程） */
+  area_search({ keyword }) {
+    const kw = String(keyword || '').trim()
+    if (!kw) return '请告诉我要搜索哪个地区，比如「淄博市」「山东省」'
+    router.push({ path: '/areasearch', query: { area: kw } })
+    return `已进入区域搜索，正在搜索「${kw}」的行政边界与天气`
+  },
+
+  /** 切换地图风格：进入切换风格页并点选对应风格（与手动点选同一套流程） */
+  change_style({ style }) {
+    if (!STYLE_LABELS.includes(style)) {
+      return `我认识的风格有：${STYLE_LABELS.join('、')}，你要哪一个？`
+    }
+    router.push({ path: '/changestyle', query: { style } })
+    return `已切换为「${style}」`
+  },
+
+  /** 地图测量：进入对应测量工具页（与地图测量弹层同款工具） */
+  map_measure({ tool }) {
+    if (!MEASURE_TOOL_ZH[tool]) {
+      return `可用的测量工具有：drawPolygonTool（多边形）、drawRectTool（矩形）、drawCircleTool（圆形）、line（线段）`
+    }
+    router.push('/mapdraw/' + tool)
+    return `已打开「${MEASURE_TOOL_ZH[tool]}」测量工具，在地图上点击即可开始测量`
+  },
+
+  /** 导航：进入导航页并规划起终点路线 */
+  start_navigation({ origin, destination }) {
+    const to = String(destination || '').trim()
+    if (!to) return '请告诉我要导航去哪里，比如「导航到临淄区」'
+    const from = String(origin || '').trim() || '淄博站'
+    router.push({ path: '/navigation', query: { from, to } })
+    return `正在规划「${from} → ${to}」的导航路线`
   }
 }
 
@@ -157,19 +209,19 @@ export async function execTool(name, args, ctx) {
 }
 
 /** 执行 agent.js 规则引擎动作（大模型不可用时的降级通道） */
-export function execRuleAction(a, ctx) {
+export async function execRuleAction(a, ctx) {
   switch (a.type) {
     case 'zoom':
       return mapOp(ctx.map, a.dir === 'in' ? 'zoom_in' : 'zoom_out')
     case 'map':
       // agent.js 飞行动作携带的是解析好的 {lng, lat, name}，直接飞
       if (a.kind === 'fly' && a.payload && a.payload.lng) {
-        ctx.map?.flyTo({ center: [a.payload.lng, a.payload.lat], zoom: 12, pitch: 45, duration: 2000 })
+        ctx.map?.flyTo({ center: [a.payload.lng, a.payload.lat], zoom: 12.5, pitch: 45, duration: 2000 })
         return `正在飞往 ${a.payload.name || '目的地'}`
       }
       return mapOp(ctx.map, a.kind, a.payload)
     case 'layer':
-      return toolImpl.set_traffic_layer({ layer: a.name, on: a.visible })
+      return toolImpl.set_traffic_layer({ layer: a.name, on: a.visible }, ctx)
     case 'road':
       return toolImpl.set_road_class({ level: a.level })
     case 'charts':
@@ -179,6 +231,14 @@ export function execRuleAction(a, ctx) {
       // 离线模式没有图表生成器：退化为打开控制中心查看统计图表
       store.chartsOpen = true
       return '已打开控制中心，可查看交通统计图表（离线模式暂不支持现场生成图表）'
+    case 'navigate':
+      return toolImpl.start_navigation({ origin: a.origin || '', destination: a.place })
+    case 'areasearch':
+      return toolImpl.area_search({ keyword: a.keyword })
+    case 'style':
+      return toolImpl.change_style({ style: a.style })
+    case 'measure':
+      return toolImpl.map_measure({ tool: a.tool })
     case 'reply':
     default:
       return a.reply || ''

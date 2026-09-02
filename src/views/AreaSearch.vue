@@ -118,7 +118,7 @@
 <template>
     <div class="areaSearch">
         <div class="headerAS">
-            <div class="headerAS_select" @click="goToCityPag">CITY</div>
+            <div class="headerAS_select" @click="goToCityPage">CITY</div>
             <div class="headerAS_div_i">
                 <svg t="1706109836956" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"
                     p-id="6986" width="20%" height="80%">
@@ -168,7 +168,8 @@
     </div>
 </template>
 <script setup>
-import { ref, onMounted, inject, onUnmounted } from 'vue';
+import { ref, onMounted, inject, onUnmounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
 let cityInput = ref('')
 let city = ref('')
 let weather1 = ref('')
@@ -179,6 +180,13 @@ let windPower = ref('')
 let reportTime = ref('')
 
 let map
+const route = useRoute()
+// AI「区域搜索某地」驱动：带 ?area= 进来直接搜索（与手动输入搜索同一流程）
+const searchAreaFromQuery = (kw) => {
+    if (!kw || !map) return
+    cityInput.value = String(kw).trim()
+    searchCity()
+}
 onMounted(() => {
     map = inject("$scene_map").map;
     map.setStyle('mapbox://styles/mapbox/streets-v11')
@@ -188,7 +196,10 @@ onMounted(() => {
                 zoom: 5,
                 speed: 0.8,
             })
+    searchAreaFromQuery(route.query.area)
 })
+// 同路由下 query 变化（AI 在同一页再搜别的地区）再次触发
+watch(() => route.query.area, (v) => searchAreaFromQuery(v))
 onUnmounted(() => {
     if (map.getLayer(`${oldLayer.id}`)) {
         map.removeLayer(`${oldLayer.id}`)
