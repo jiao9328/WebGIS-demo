@@ -83,6 +83,27 @@ const ROAD_ALIAS_LOOSE = [['高速', 'highway'], ['一级', 'first'], ['二级',
 const ROAD_LABEL = { total: '总道路', highway: '高速公路', first: '一级道路', second: '二级道路', third: '三级道路' }
 
 /* ================= 解析入口 ================= */
+
+// 剥离句首寒暄/句尾语气词，得到干净地名（不区分是导航目的地还是飞行目的地）
+const cleanPlace = (raw) => {
+  let s = String(raw || '').trim()
+  // 复合句只取第一个地名（「导航到博山区并且打开监控」→ 博山区）
+  const cut = s.search(/(并且|然后|顺便|还要|以及|再帮我|再)/)
+  if (cut > 0) s = s.slice(0, cut)
+  s = s.replace(/^(?:麻烦(?:你|您)?|请你?|帮我|给我|帮忙|想问(?:下|一下)?|想知道|帮我看看|帮我看(?:看|下)|看看|看下)/, '')
+  s = s.replace(/[，。！？!?、…\s]+$/, '')
+  s = s.replace(/(?:的?路线|怎么走|怎么去|怎么过去|导航|看看|参观|游玩|逛逛|转转|游览|观光|走一趟|一下|吧|呢|啊|呀|哦|了|去)+$/, '')
+  return s.trim()
+}
+
+/**
+ * 出行意图三分流（与 AIAssistant.vue 系统提示给 LLM 的分流规则同口径）：
+ *   1) 查看某地：飞到/飞往/定位 X → fly（地图自动飞过去并缩放到能看清该地的级别）
+ *   2) 想去某地（未提起点）：想去/我要去/怎么去 X → navigate（执行器默认起点淄博站，出路线并缩放）
+ *   3) 从 A 到 B：从A到B / 从A去B / 从A飞往B → navigate（自动识别起点终点）
+ * 规则顺序很关键：「导航」字样最先；其次「从A到B」整体，防只抓终点；再次纯「飞到」；
+ * 「想去X」等在最后。层/风格等带 从…到… 的说法须放行给后续图层/风格规则。
+ */
 export function parseCommand(text, ctx) {
   const t = text.trim()
   if (!t) return null
@@ -93,24 +114,52 @@ export function parseCommand(text, ctx) {
   if (/(旋转|环绕|转一圈)/.test(t)) return mapAction('rotate')
   if (/(俯视|俯视角)/.test(t)) return mapAction('top')
   if (/(斜视|倾斜|45)/.test(t)) return mapAction('tilt')
-  // 二级功能：导航到某地（须先于 fly 规则，防「去」字命中）
-  const navHit = t.match(/(导航到|导航去|导航至|规划路线到)(.+)/)
+  // 分流 3+2 前置：整句含 从…到/去… 的交通意图一律按 AB 导航解析（先于 飞到/想去，防只命中终点）
+  // 图层/风格类「从样式A切到B」等说法在此放行（交给下方图层/风格规则）
+  const SKIP_AB = /(切换到|切换|换成|改成|变成|风格|图层|显示|打开|关闭|隐藏|测量|搜索|查询|天气|热力)/
+  // 1) 明确说「导航/规划」：可带起点（从A导航到B）
+  const navHit = t.match(/(?:导航到|导航去|导航至|导航前往|规划(?:路线|导航)?(?:到|去))([^，。！？\s]{1,16})/)
   if (navHit) {
-    const place = navHit[2].trim()
+    const place = cleanPlace(navHit[1])
     if (place) {
       // 可带起点：「从张店区导航到博山区」→ origin=张店区；未提起点则执行器默认淄博站
-      const fromHit = t.match(/(?:从|自)([^，。！？\s]{1,12}?)(?:出发|开始|走|去|到|前往|至|导航)/)
+      const fromHit = t.match(/(?:从|自)([^，。！？\s]{1,12}?)(?:出发|开始|走|去|到|前往|至|导航|飞往)/)
       return { type: 'navigate', place, origin: fromHit ? fromHit[1].trim() : '' }
     }
   }
-  if (/(飞到|飞往|定位|去|前往)(.+)/.test(t)) {
-    // $1 是动词，地名在第二个捕获组
-    const target = RegExp.$2.replace(/[，。！？!?、\s]+$/, '').trim()
+  // 2) 从A到B 出行导航（无「导航」字样也识别）：从A到B / 从A去B / 从A飞往B 等
+  if (!SKIP_AB.test(t)) {
+    const abHit = t.match(/(?:从|自)([^，。！？\s]{1,12}?)(?:出发|这里|这边)?(?:到|去|前往|飞往|飞到|走)([^，。！？\s]{1,16})/)
+    if (abHit) {
+      const origin = cleanPlace(abHit[1])
+      const place = cleanPlace(abHit[2])
+      if (origin && place && place !== origin) {
+        return { type: 'navigate', origin, place }
+      }
+    }
+  }
+  // 3) 查看某地：飞到/飞往/飞去/定位 X → 自动飞行并缩放到该地
+  const flyHit = t.match(/(?:飞(?:到|往|去)|定位(?:到|至|一下)?)([^，。！？\s]{1,16})/)
+  if (flyHit) {
+    const target = cleanPlace(flyHit[1])
     if (!target) return replyAction('想飞到哪？告诉我地名，比如「飞到临淄区」「飞到张南路」')
     const d = DISTRICTS.find((x) => target.includes(x.name.replace('区', '').replace('县', '')) || target.includes(x.name.slice(0, 2)))
     if (d) return mapAction('fly', { lng: d.center[0], lat: d.center[1], name: d.name })
     // 非区县：交给执行器做多级解析（道路 → 医院商场小区等 POI → 在线地理编码兜底）
     return { type: 'map', kind: 'fly', payload: { place: target }, reply: `正在查找「${target}」…` }
+  }
+  // 4) 出行导航（未提起点 → 执行器默认起点淄博站）：想去X / 我要去X / 怎么去X / X怎么走
+  const destNavHit =
+    t.match(/(?:(?:我|咱|您|我们)?(?:想|要|打算|准备|期盼)(?:去|到)|(?:帮我|带我)(?:去|到)|领我去|前往)([^，。！？\s]{1,16})/) ||
+    t.match(/(?:怎么|咋|如何)(?:去|到|走|到达|过去)([^，。！？\s]{1,16})/) ||
+    t.match(/([^，。！？\s]{1,16})(?:怎么走|怎么去|怎么过去|咋走|咋去)/)
+  if (destNavHit && !SKIP_AB.test(t)) {
+    const place = cleanPlace(destNavHit[1])
+    // 「X怎么走」第三条规则的捕获组可能含前导动作词（帮我/我想等），cleanPlace 已剥离；
+    // 仍残留出行动词说明没抓准，放行给其它规则/反问
+    if (place && place.length <= 16 && !/(导航|飞到|飞往|想去|我要去|怎么)/.test(place)) {
+      return { type: 'navigate', origin: '', place }
+    }
   }
   // 道路分级：关闭/隐藏某等级 → 回到总道路；显示/切换/仅看某等级 → 该等级
   // （须先于图层开关，否则「一级道路」会命中别名「道路」；也先于 fly 之外的通用回复）
@@ -174,7 +223,7 @@ export function parseCommand(text, ctx) {
     return replyAction('天气服务暂时不可用，不过我可以帮你操作地图，比如「显示监控探头」「飞到临淄区」')
   }
   // 默认回复
-  return replyAction('可以这样对我说：「放大地图」「飞到临淄区」「显示监控探头」「切换到二级道路」「打开控制中心」')
+  return replyAction('可以这样对我说：「放大地图」「飞到临淄区」「想去海岱楼怎么走」「从张店区去博山区」「显示监控探头」「切换到二级道路」「打开控制中心」')
 }
 
 /* ================= 动作构造 ================= */

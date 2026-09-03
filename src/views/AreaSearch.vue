@@ -189,7 +189,6 @@ const searchAreaFromQuery = (kw) => {
 }
 onMounted(() => {
     map = inject("$scene_map").map;
-    map.setStyle('mapbox://styles/mapbox/streets-v11')
     map.setPitch(0)
     map.flyTo({ //飞行到某个点，带飞行动画
                 center: [118.05,36.81],
@@ -200,11 +199,13 @@ onMounted(() => {
 })
 // 同路由下 query 变化（AI 在同一页再搜别的地区）再次触发
 watch(() => route.query.area, (v) => searchAreaFromQuery(v))
+// 离开只清掉本页加的行政边界多边形；不要 map.setStyle——
+// 换底图会清空 L7 全部叠加图层，且导航控件依赖一次性 load 事件建数据源，
+// 换风格后 load 不再触发，后续进导航页路线永远画不出来
 onUnmounted(() => {
-    if (map.getLayer(`${oldLayer.id}`)) {
-        map.removeLayer(`${oldLayer.id}`)
+    if (layerId && map.getLayer(layerId)) {
+        map.removeLayer(layerId)
     }
-    map.setStyle('mapbox://styles/mapbox/dark-v10')
 })
 
 const goToCityPage = () => {
@@ -214,7 +215,8 @@ const searchCity = () => {
     addMask(cityInput.value);
 }
 
-let oldLayer = Object
+// 本页添加的边界多边形层 id（无搜索时为空，卸载不误删）
+let layerId = ''
 const addMask = (text) => {
     let postcode = ''
     let level = ''
@@ -240,11 +242,12 @@ const getBound = (postcode) => {
         .then(res => res.json())
         .then(res => {
             // console.log(`output->res`, res)
-            if (map.getLayer(`${oldLayer.id}`)) {
-                map.removeLayer(`${oldLayer.id}`)
+            if (layerId && map.getLayer(layerId)) {
+                map.removeLayer(layerId)
             }
+            const id = 'polygon' + postcode
             map.addLayer({
-                id: 'polygon' + postcode,
+                id,
                 type: 'fill',    //多边形为fill
                 source: {
                     type: 'geojson',
@@ -256,7 +259,7 @@ const getBound = (postcode) => {
                     'fill-opacity': 0.6,
                 },
             })
-            oldLayer = map.getLayer('polygon' + postcode)
+            layerId = id
             // console.log(oldLayer.id);
         })
 }

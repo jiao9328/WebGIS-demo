@@ -59,6 +59,9 @@ const initMap = () => {
       mapInstance: map,
     }),
   });
+  // 坑：基础图层（道路流线/城市建筑）必须等 style 加载完成再 addLayer。
+  // L7 在 style 未就绪时抢先建图层会撞 mapbox「Style is not done loading」，
+  // 偶发打断样式加载（地图卡加载、导航/飞行全部失效），故统一推迟到 map load 后。
   map.on("style.load", () => {
     map.setFog({});
     // 消除边界
@@ -83,19 +86,24 @@ const initMap = () => {
       ["match", ["get", "worldview"], ["all", "CN"], true, false],
     ]);
   });
-  initControl(scene, map)
-  initLayer(scene)
-  initTrafficLayers(scene)
-  initRoadClassLayers(scene)
-  loadMap.value = true
-  // 响应式容器赋值（子组件 mounted 时注入的引用同步生效）
-  sceneMap.scene = scene
-  sceneMap.map = map
-  if (import.meta.env.DEV) {
-    // 调试桥仅开发环境暴露（供 CDP 验证脚本断言）
-    window.__scene = scene
-    window.__map = map
+  // 等 style 真正加载完再建基础图层/挂载 UI（慢网时可能数秒）
+  const boot = () => {
+    initControl(scene, map)
+    initLayer(scene)
+    initTrafficLayers(scene)
+    initRoadClassLayers(scene)
+    loadMap.value = true
+    // 响应式容器赋值（子组件 mounted 时注入的引用同步生效）
+    sceneMap.scene = scene
+    sceneMap.map = map
+    if (import.meta.env.DEV) {
+      // 调试桥仅开发环境暴露（供 CDP 验证脚本断言）
+      window.__scene = scene
+      window.__map = map
+    }
   }
+  if (map.loaded()) boot()
+  else map.once('load', boot)
 };
 
 onMounted(async () => {

@@ -87,7 +87,7 @@ const modeText = computed(() => {
 
 const chips = [
   '显示监控探头', '切换到二级道路', '打开控制中心', '区域搜索淄博市', '切换卫星影像',
-  '导航到博山区', '测量矩形', '飞到临淄区', '飞到张南路', '淄博今天天气怎么样？'
+  '导航到博山区', '我想去海岱楼', '从张店区去博山区', '测量矩形', '飞到临淄区', '飞到张南路', '淄博今天天气怎么样？'
 ]
 
 // 点击快捷指令：把按钮文字自动填入输入框（发送后实现对应功能）
@@ -138,11 +138,14 @@ function guessActions(text) {
   for (const [kw, level] of ROAD_GUESS) {
     if (text.includes(kw)) add({ type: 'road', level }, `切换到「${ROAD_LABEL[level]}」`)
   }
-  // 区县 / 地标飞行
+  // 区县 / 地标：说出行（想去/去/前往/怎么走）→ 优先推「从淄博站导航到X」；纯查看 → 推「飞到X」
   const placeHits = text.match(/张店|临淄|淄川|博山|周村|桓台|高青|沂源|淄博站|火车站|海岱楼|齐盛湖|人民公园|市政府/g)
   if (placeHits) {
+    const travel = /(想去|要去|我想去|我要去|打算去|准备去|怎么去|怎么走|怎么到|前往|导航)/.test(text) ||
+      (!/(去掉|去除|减去|回去|过去|上去|下去|去看|去看看|看看)/.test(text) && /(?:^|[^，。！？\s、])去/.test(text))
     for (const p of [...new Set(placeHits)]) {
-      add({ type: 'map', kind: 'fly', payload: { place: p } }, `飞到「${p}」`)
+      if (travel) add({ type: 'navigate', origin: '', place: p }, `从淄博站导航到「${p}」`)
+      else add({ type: 'map', kind: 'fly', payload: { place: p } }, `飞到「${p}」（自动缩放过去）`)
     }
   }
   // 控制中心
@@ -210,15 +213,20 @@ const SYSTEM = '你是「淄博市智慧交通管理系统」网页里的 AI 助
   '3) 不涉及页面操作时（闲聊、问路况、问淄博风土人情等），直接正常中文聊天，不要编造页面功能已执行；' +
   '4) 用户指令含糊时，先用 get_status 了解当前状态，再按最可能的意图调用工具；' +
   '5) 能落到页面二级功能就落到二级：打开某图层时地图会自动飞过去看清该图层；区域搜索某地区用 area_search；' +
-  '换风格用 change_style；测量用 map_measure；导航去某地用 start_navigation；' +
-  '飞往地点可精确到区县、某条道路（张南路）、某家医院/学校/商场等，用 fly_to；' +
-  '6) 回答简洁友好，200 字以内。'
+  '换风格用 change_style；测量用 map_measure；飞往地点可精确到区县、某条道路（张南路）、某家医院/学校/商场等，用 fly_to；' +
+  '6) 出行 vs 查看 分流（重要，选错工具会答非所问）：' +
+  '——用户说「飞到X / 飞往X / 定位X / 飞过去看看X」是想查看那个地方 → 用 fly_to（地图自动飞到并缩放到能看清该地的级别）；' +
+  '——用户说「想去X / 我要去X / 怎么去X / 到X去 / X怎么走 / 去X的路线 / 导航到X」是想开车过去 → 用 start_navigation，destination=X，origin 留空（默认起点淄博站，进入导航页自动出路线并缩放到全程）；' +
+  '——用户说「从A到B / 从A去B / A到B怎么走 / 从A出发去B」→ start_navigation，origin=A、destination=B；' +
+  '注意：只要用户表达的是出行/到达意图（去、到、怎么走、路线），就用 start_navigation 而不是 fly_to；' +
+  'fly_to 只用于查看地点本身；' +
+  '7) 回答简洁友好，200 字以内。'
 
 /* 工具定义（Anthropic tool_use 格式，DeepSeek anthropic 端点兼容） */
 const TOOLS = [
   { name: 'get_status', description: '查询页面当前状态：地图缩放级别与中心、道路分级、已开启的图层、控制中心开关、天气', input_schema: { type: 'object', properties: {} } },
   { name: 'map_action', description: '控制地图视角动作', input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['zoom_in', 'zoom_out', 'reset_view', 'rotate_view', 'top_view', 'tilt_view'], description: 'zoom_in=放大 zoom_out=缩小 reset_view=复位淄博全景 rotate_view=环绕旋转 top_view=俯视 tilt_view=斜视' } }, required: ['action'] } },
-  { name: 'fly_to', description: '地图飞往并聚焦任意地点：淄博区县（张店区/临淄区等）、道路（张南路/青银高速等）、地标（淄博站/海岱楼/齐盛湖公园）、POI（医院/博物馆/景点/商场/小区/住宅），以及学校等任意具体地名（会在线查询），未命中会返回候选名', input_schema: { type: 'object', properties: { place: { type: 'string', description: '地点中文名：区县、道路名、POI 名或任意地名' } }, required: ['place'] } },
+  { name: 'fly_to', description: '地图飞到某个地点并自动缩放到能看清该地的级别（适合查看：区县/道路/地标/POI/学校等任意地名，会多级解析+在线兜底，未命中返回候选名）。注意：仅当用户说「飞到X/飞往X/定位X/去X看看」这种查看意图才用；用户说「想去X/怎么去X/从A到B」是想走路线，必须用 start_navigation，不要用本工具', input_schema: { type: 'object', properties: { place: { type: 'string', description: '地点中文名：区县、道路名、POI 名或任意地名' } }, required: ['place'] } },
   { name: 'set_road_class', description: '切换道路分级显示：total=总道路（全路网）、highway=高速公路、first=一级道路、second=二级道路、third=三级道路', input_schema: { type: 'object', properties: { level: { type: 'string', enum: ['total', 'highway', 'first', 'second', 'third'] } }, required: ['level'] } },
   { name: 'set_traffic_layer', description: '开关交通图层', input_schema: { type: 'object', properties: { layer: { type: 'string', enum: ['camera', 'trafficLight', 'police', 'congestion', 'heat', 'busRoute', 'busStop', 'mainRoad', 'building'], description: 'camera=监控探头 trafficLight=信号灯 police=警员分布 congestion=道路拥堵 heat=热力图 busRoute=公交线路 busStop=公交站点 mainRoad=道路 building=城市建筑' }, on: { type: 'boolean', description: 'true=打开 false=关闭' } }, required: ['layer', 'on'] } },
   { name: 'set_control_center', description: '开关控制中心（统计图表浮层）', input_schema: { type: 'object', properties: { open: { type: 'boolean' } }, required: ['open'] } },
@@ -226,7 +234,7 @@ const TOOLS = [
   { name: 'area_search', description: '区域搜索：搜索某个城市/行政区的边界轮廓并展示（相当于进入区域搜索页直接搜索）。keyword 传中文地区名，如 淄博市、山东省、济南市', input_schema: { type: 'object', properties: { keyword: { type: 'string', description: '地区中文名，至少要市级' } }, required: ['keyword'] } },
   { name: 'change_style', description: '切换地图风格（相当于切换风格页点选某一风格）', input_schema: { type: 'object', properties: { style: { type: 'string', enum: ['街道风格', '高对比度街道风格', '深色风格', '卫星影像', '地形风格', '高清街道风格', '夜间街道风格', '导航风格（白天）', '导航风格（夜间）', '海图风格'] } }, required: ['style'] } },
   { name: 'map_measure', description: '打开地图测量工具（相当于底部「地图测量」弹层选一种工具）：多边形面积/矩形面积/圆形面积/线段距离', input_schema: { type: 'object', properties: { tool: { type: 'string', enum: ['drawPolygonTool', 'drawRectTool', 'drawCircleTool', 'line'], description: 'drawPolygonTool=多边形 drawRectTool=矩形 drawCircleTool=圆形 line=线段' } }, required: ['tool'] } },
-  { name: 'start_navigation', description: '路线导航：进入导航页并自动把起终点定位填入输入框、缩放到线路（与手动点击导航后输入起终点效果一样）。用户说「从A导航到B」时 origin 传 A、destination 传 B；只说了「导航到B」则 origin 可省略', input_schema: { type: 'object', properties: { origin: { type: 'string', description: '起点中文地名，如 张店区、淄博站；用户没说起点时可省略（默认淄博站）' }, destination: { type: 'string', description: '终点中文地名，必填，如 博山区' } }, required: ['destination'] } }
+  { name: 'start_navigation', description: '出行路线导航：进入导航页并自动把起终点填入输入框、画出驾车路线并缩放到整条线路（与手动点导航输入起终点效果一样）。用户说「想去X/我要去X/怎么去X/X怎么走/导航到X/到X去」= 只想去某地 → destination 填 X、origin 留空（默认淄博站）；用户说「从A到B/从A去B/A到B怎么走」= 起点终点都明确 → origin 填 A、destination 填 B', input_schema: { type: 'object', properties: { origin: { type: 'string', description: '起点中文地名，如 张店区、淄博站；用户明确说了起点才填（从A到B时必填），只说目的地时留空（默认淄博站）' }, destination: { type: 'string', description: '终点中文地名，必填，如 博山区、海岱楼' } }, required: ['destination'] } }
 ]
 
 async function callLLM() {
@@ -305,11 +313,13 @@ async function send(raw) {
   if (handlePendingAnswer(text)) return
   pending.value = null // 反问被新指令打断
   busy.value = true
+  const histLen = llmHist.length // 本轮入史位置：失败时回滚，避免半截对话污染下次请求
   try {
     if (!KEY) throw new Error('no-key') // 未配置 key 直接走离线引擎
     mode.value = 'llm'
     await chatLLM(text)
   } catch (e) {
+    llmHist.splice(histLen) // 丢掉的只是这一轮未完成的 user/assistant 轮次，不影响历史
     mode.value = 'rule'
     if (e.message !== 'no-key') push('sys', '⚠ 大模型连接失败，已切换离线指令识别（页面功能照常可用）')
     await chatRule(text)

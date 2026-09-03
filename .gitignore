@@ -30,3 +30,6 @@ coverage
 # CDP 调试 profile
 .edge-profile
 效果图.png
+
+# 密钥（DeepSeek / Mapbox / 高德 API Key），严禁上传
+.env
