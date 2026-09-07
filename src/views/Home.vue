@@ -29,7 +29,7 @@ onMounted(() => {
     selectRoadClass(store.roadClass)
     return true
   }
-  // 容器已就绪直接飞，否则等 reactive 赋值
+  // 容器已就绪直接飞，否则等 reactive 容器赋值（App.vue boot 完成后触发一次即停）
   if (!go()) {
     const stop = watch(sm, () => {
       if (go()) stop()

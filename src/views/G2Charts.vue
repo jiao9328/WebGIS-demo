@@ -7,15 +7,15 @@
       </div>
       <div class="g2-chart g2-chart-left">
         <div class="people-sum">淄博各区县拥堵路段流量排行</div>
-        <BarChart v-bind="bus_config" :data="bus_data" />
+        <BarChart v-bind="busChart.bus_config" :data="busChart.bus_data" />
       </div>
     </div>
     <div class="g2-right">
-      <div class="g2-chart" style="height: 35%">
+      <div class="g2-chart" style="height: 26%">
         <div class="people-sum">近期警情类型分布</div>
-        <PieChart v-bind="people_config" />
+        <PieChart v-bind="peopleChart.people_config" />
       </div>
-      <div class="g2-chart" style="height: 12%">
+      <div class="g2-chart" style="height: 10%">
         <div class="people-sum">道路感知设备</div>
         <div class="hospital">
           <div class="item">
@@ -28,7 +28,7 @@
           </div>
         </div>
       </div>
-      <div class="g2-chart" style="height: 12%">
+      <div class="g2-chart" style="height: 10%">
         <div class="people-sum">警力与公交运力</div>
         <div class="hospital">
           <div class="item">
@@ -41,33 +41,78 @@
           </div>
         </div>
       </div>
+      <!-- 动态车辆·信号灯联动：读 vehicleSim 统计镜像 + 近 60s 均速折线 -->
+      <div class="g2-chart vp-block" style="height: 28%">
+        <div class="people-sum">动态车辆·信号灯联动</div>
+        <div class="hosp4">
+          <div class="it"><b class="ok">{{ vs.running }}</b><span>行驶中</span></div>
+          <div class="it"><b class="warn">{{ vs.waiting }}</b><span>红灯等待</span></div>
+          <div class="it"><b class="warn">{{ vs.onCongested }}</b><span>拥堵缓行</span></div>
+          <div class="it"><b class="cy">{{ vs.avgSpeed }}</b><span>均速km/h</span></div>
+        </div>
+        <div class="vp-line">
+          <LineChart v-bind="lineChart" />
+        </div>
+      </div>
     </div>
   </div>
 </template>
 <script setup>
-import { ColumnChart, BarChart, PieChart } from "@opd/g2plot-vue";
+import { computed } from 'vue'
+import { ColumnChart, BarChart, PieChart, LineChart } from "@opd/g2plot-vue";
 /* 出行人口 */
 import { useLeftTop } from "@/Hooks/useLeftTop";
 import { useLeftBottom } from "@/Hooks/useLeftBottom";
 import { useRightTop } from "@/Hooks/useRightTop";
-import { cameras, trafficLights, police } from '@/tools/mockData'
+import { store } from '../store'
+/* DB 未就绪时的兜底源：mock 单例与入库数据同种子同口径；JSON 为公交真实数据 */
+import { cameras as mockCameras, trafficLights as mockLights, police as mockPolice } from '@/tools/mockData'
 import busRoutes from '@/assets/GIS_Data/bus_routes.json'
 import busStops from '@/assets/GIS_Data/bus_stops_amap.json'
-const { config, data } = useLeftTop();
-const { bus_config, bus_data } = useLeftBottom();
-const { people_config } = useRightTop();
 
-// 交通设施统计（真实数据计算）
-const stat = {
-  cameraTotal: cameras.length,
-  cameraFault: cameras.filter((c) => c.status === 'fault').length,
-  lightTotal: trafficLights.length,
-  lightFault: trafficLights.filter((l) => l.state === 'fault').length,
-  policeTotal: police.length,
-  policeOnDuty: police.filter((p) => p.onDuty).length,
-  busRoutes: busRoutes.features.length,
-  busStops: busStops.features.length
-}
+// DB 就绪（后端可达且已拉取）→ 读 SQL Server；否则回退本地兜底源
+const rowsOf = (name) => (store.dbStatus === 'ok' ? store.dbData[name] : undefined)
+
+/* 车辆密度柱状图：派生计算值（人口比例），非 DB 表，保持静态 */
+const { config, data } = useLeftTop();
+
+/* 拥堵流量条形图 / 警情饼图：读 DB congestion / alerts，随增删改响应式刷新 */
+const busChart = computed(() => useLeftBottom(rowsOf('congestion')));
+const peopleChart = computed(() => useRightTop(rowsOf('alerts')));
+
+// 交通设施统计卡（DB 行实时统计；故障数/在勤数按各自状态列）
+const stat = computed(() => {
+  const cam = rowsOf('cameras') || mockCameras
+  const light = rowsOf('traffic_lights') || mockLights
+  const pol = rowsOf('police') || mockPolice
+  const routes = rowsOf('bus_routes') || busRoutes.features
+  const stops = rowsOf('bus_stops') || busStops.features
+  return {
+    cameraTotal: cam.length,
+    cameraFault: cam.filter((c) => c.status === 'fault').length,
+    lightTotal: light.length,
+    lightFault: light.filter((l) => l.state === 'fault').length,
+    policeTotal: pol.length,
+    policeOnDuty: pol.filter((p) => p.onDuty === true || p.on_duty === true).length,
+    busRoutes: routes.length,
+    busStops: stops.length
+  }
+})
+
+// 动态车辆联动块：vehicleSim 每秒写入的统计镜像 + 近 60s 均速（秒级刷新）
+const vs = computed(() => store.vehicleStats)
+const lineChart = computed(() => ({
+  height: 92,
+  xField: 't',
+  yField: 'speed',
+  smooth: true,
+  color: '#7dd3ff',
+  lineStyle: { lineWidth: 2 },
+  xAxis: { label: { style: { fill: '#bfd9ff', fontSize: 10 } }, tickCount: 6 },
+  yAxis: { label: { style: { fill: '#bfd9ff', fontSize: 10 } }, min: 0 },
+  // 依赖 history.length 触发每秒重算（push/shift 原地变更不会自动触发）
+  data: (store.vehicleStats.history.length, store.vehicleStats.history.slice())
+}))
 </script>
 <style>
 .g2-left,
@@ -161,10 +206,51 @@ const stat = {
   z-index: 1;
 }
 
-/* 统计卡说明小字 */
+
 .item-sub {
   margin-top: 6px;
   font-size: 11px;
   color: rgba(200, 220, 255, 0.75);
+}
+
+/* ===== 动态车辆·信号灯联动块 ===== */
+.vp-block {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4 项速览：行驶中 / 红灯等待 / 拥堵缓行 / 均速（title 为 absolute，正常文档流即可） */
+.hosp4 {
+  display: flex;
+  justify-content: space-around;
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.hosp4 .it {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.hosp4 .it b {
+  font-size: 17px;
+  font-weight: bold;
+  text-shadow: 0 0 10px rgba(125, 211, 255, 0.55);
+}
+
+.hosp4 .it b.ok { color: #22c55e; }
+.hosp4 .it b.warn { color: #ff6b6b; text-shadow: 0 0 10px rgba(255, 107, 107, 0.6); }
+.hosp4 .it b.cy { color: #7dd3ff; }
+
+.hosp4 .it span {
+  font-size: 10px;
+  color: rgba(180, 205, 240, 0.8);
+}
+
+/* 近 60s 均速折线（autoFit 容器） */
+.vp-line {
+  flex: 1;
+  min-height: 0;
 }
 </style>

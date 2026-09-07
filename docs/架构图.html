@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>淄博市智慧交通管理系统 · 系统架构图</title>
+<style>
+  :root {
+    --bg: #040b1c;
+    --panel: rgba(13, 32, 66, .72);
+    --panel2: rgba(9, 24, 52, .85);
+    --line: rgba(86, 160, 255, .30);
+    --line2: rgba(120, 200, 255, .45);
+    --txt: #d7e8ff;
+    --dim: #8fb3dd;
+    --cyan: #00c8ff;
+    --blue: #4d9fff;
+    --violet: #9d8cff;
+    --teal: #2dd4bf;
+    --amber: #ffc24d;
+    --red: #ff6b6b;
+    --mono: "Consolas", "Cascadia Code", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background:
+      radial-gradient(1100px 480px at 22% -8%, rgba(0,120,255,.14), transparent 60%),
+      radial-gradient(900px 420px at 85% 2%, rgba(0,200,255,.10), transparent 60%),
+      var(--bg);
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: var(--txt);
+  }
+  .diagram { width: 1740px; margin: 0 auto; padding: 26px 30px 36px; }
+
+  /* ---------- 标题 ---------- */
+  .head {
+    display: flex; align-items: center; gap: 20px;
+    padding: 14px 22px;
+    background: linear-gradient(90deg, rgba(0,90,200,.30), rgba(0,180,170,.16), rgba(0,90,200,.30));
+    border: 1px solid var(--line2); border-radius: 14px;
+    box-shadow: 0 0 26px rgba(0,140,255,.18), inset 0 0 40px rgba(0,120,255,.06);
+    margin-bottom: 22px;
+  }
+  .head .logo {
+    width: 56px; height: 56px; border-radius: 14px; flex: 0 0 56px;
+    background: linear-gradient(135deg, #00c8ff, #0096b0);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 20px; color: #fff;
+    box-shadow: 0 0 18px rgba(0,200,255,.5);
+  }
+  .head h1 { font-size: 27px; letter-spacing: 2px; background: linear-gradient(90deg,#fff,#9be8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .head .sub { margin-top: 4px; font-size: 13px; color: var(--dim); letter-spacing: 1px; }
+  .head .chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; max-width: 560px; justify-content: flex-end; }
+  .chip {
+    font-size: 12px; padding: 4px 12px; border-radius: 20px; white-space: nowrap;
+    border: 1px solid var(--line2); color: #bfe3ff; background: rgba(0,120,255,.12);
+  }
+  .chip b { color: var(--cyan); font-weight: 700; }
+
+  /* ---------- 层带 ---------- */
+  .band {
+    background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px;
+    padding: 13px 16px 16px;
+    margin-bottom: 0;
+    position: relative;
+  }
+  .band > .btitle {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .band > .btitle .t2 { line-height: 1.6; }
+  .band > .btitle .dot {
+    width: 10px; height: 10px; border-radius: 3px; transform: rotate(45deg);
+    box-shadow: 0 0 10px currentColor;
+  }
+  .band > .btitle .t1 { font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+  .band > .btitle .t2 { font-size: 12px; color: var(--dim); letter-spacing: .5px; }
+  .band > .btitle .arch {
+    margin-left: auto; font-size: 11px; color: var(--dim); font-family: var(--mono); opacity: .8;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row + .row { margin-top: 12px; }
+  .grp {
+    border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px;
+    background: rgba(255,255,255,.02);
+  }
+  .grp .gt { font-size: 12px; color: var(--cyan); margin-bottom: 8px; letter-spacing: 1px; font-weight: 600; }
+  .grp .row-in { display: flex; gap: 10px; flex-wrap: wrap; }
+  .grp .row-in + .row-in { margin-top: 10px; }
+
+  /* ---------- 卡片 ---------- */
+  .card {
+    flex: 1 1 0; min-width: 172px; max-width: 100%;
+    background: var(--panel2);
+    border: 1px solid rgba(100,170,255,.22);
+    border-left: 3px solid var(--cc, var(--cyan));
+    border-radius: 8px;
+    padding: 9px 12px;
+    position: relative;
+  }
+  .card .nm { font-size: 13.5px; font-weight: 700; color: var(--nc, #eaf4ff); letter-spacing: .3px; line-height: 1.45; }
+  .card .nm .tag {
+    font-size: 10px; font-weight: 400; color: var(--cc, var(--cyan));
+    border: 1px solid currentColor; border-radius: 9px; padding: 0 6px; margin-left: 5px;
+    vertical-align: 1px; white-space: nowrap;
+  }
+  .card .ds { margin-top: 6px; font-size: 12px; line-height: 1.72; color: #a9c4e2; word-break: break-word; }
+  .card .ds b { color: #cfe6ff; font-weight: 600; }
+  .card .path {
+    margin-top: 7px; font-size: 11px; color: var(--dim);
+    font-family: var(--mono); opacity: .95; display: block;
+    word-break: break-all; line-height: 1.5;
+  }
+  .card .kbd {
+    font-size: 10px; color: #000; background: #7fd8ff;
+    border-radius: 4px; padding: 0 5px; font-weight: 700;
+  }
+  .card .kbd.kd { background: #dfe6ff; color: #223; }
+  .card .kbd.ka { background: #ffe3a8; color: #44300b; }
+  .card .kbd.kg { background: #b7f5e8; color: #06382e; }
+
+  /* 调色 */
+  .c-cyan  { --cc: var(--cyan); }
+  .c-blue  { --cc: var(--blue); }
+  .c-violet{ --cc: var(--violet); }
+  .c-teal  { --cc: var(--teal); }
+  .c-amber { --cc: var(--amber); }
+  .c-red   { --cc: var(--red); }
+
+  /* ---------- 分隔 ---------- */
+  .divider {
+    height: 32px; display: flex; align-items: center; justify-content: center; gap: 12px;
+    color: rgba(140,190,235,.55); font-size: 11.5px; letter-spacing: 2px;
+  }
+  .divider::before, .divider::after {
+    content: ""; width: 90px; height: 0; border-top: 1px dashed rgba(100,170,255,.4);
+  }
+  .divider i { font-style: normal; color: var(--cyan); animation: none; }
+
+  /* ---------- 链路 ---------- */
+  .flow-wrap { display: flex; gap: 14px; margin-top: 14px; }
+  .flow {
+    flex: 1;
+    background: linear-gradient(180deg, rgba(20,48,96,.6), rgba(10,28,60,.75));
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  }
+  .flow .ft { font-size: 13.5px; font-weight: 700; margin-bottom: 10px; letter-spacing: .5px; }
+  .flow .steps { display: flex; align-items: stretch; gap: 6px; }
+  .fstep {
+    flex: 1; min-width: 0;
+    background: rgba(6,16,36,.8); border: 1px solid rgba(100,170,255,.18);
+    border-radius: 7px; padding: 8px 10px;
+    font-size: 12px; line-height: 1.65; color: #bcd7f5; word-break: break-word;
+  }
+  .fstep .sno {
+    display: block; font-size: 10px; color: var(--cyan); margin-bottom: 2px; font-weight: 700;
+  }
+  .farrow { align-self: center; color: var(--cyan); font-size: 16px; flex: 0 0 auto; }
+  .fend {
+    align-self: center; font-size: 17px; flex: 0 0 auto; padding: 0 2px;
+  }
+
+  /* ---------- 图例 ---------- */
+  .legend { margin-top: 14px; display: flex; gap: 22px; flex-wrap: wrap; align-items: center;
+    font-size: 11.5px; color: var(--dim); }
+  .legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .foot-note { margin-top: 10px; font-size: 11px; color: #6e8db0; text-align: center; letter-spacing: .5px; }
+</style>
+</head>
+<body>
+<div class="diagram">
+
+  <!-- ================= 标题 ================= -->
+  <div class="head">
+    <div class="logo">淄</div>
+    <div>
+      <h1>淄博市智慧交通管理系统 · WebGIS 可视化平台</h1>
+      <div class="sub">系统架构图 —— 纯前端单页应用（SPA）· 零后端 · 开放地图服务直连 · 源码目录 D:\Zibo-SmartTransportation-WebGIS-main2</div>
+    </div>
+    <div class="chips">
+      <span class="chip"><b>Vue 3</b> · &lt;script setup&gt;</span>
+      <span class="chip"><b>Vite 4</b></span>
+      <span class="chip"><b>AntV L7</b> 2.15</span>
+      <span class="chip"><b>Mapbox GL</b> 2.14</span>
+      <span class="chip"><b>G2Plot</b> 2.4</span>
+      <span class="chip"><b>DeepSeek</b> AI 助手</span>
+      <span class="chip"><b>pnpm</b></span>
+    </div>
+  </div>
+
+  <!-- ================= A 呈现层 ================= -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot c-cyan" style="color:var(--cyan)"></span>
+      <span class="t1" style="color:var(--cyan)">A · 浏览器大屏 UI（呈现层）</span>
+      <span class="t2">全屏地图 + 玻璃拟态悬浮面板 · 全站唯一的常驻壳层（App.vue 同时挂载，跨路由不消失）</span>
+      <span class="arch">src/App.vue</span>
+    </div>
+    <div class="row">
+      <div class="card c-cyan"><span class="nm">顶部标题栏<span class="tag">Header</span></span><div class="ds">系统名 + 时钟</div><span class="path">src/components/Header.vue</span></div>
+      <div class="card c-cyan"><span class="nm">底部工具条<span class="tag">BottomTools</span></span><div class="ds">悬浮胶囊：首页 / 地球自转 / 城市视角 / 控制中心 / 地图测量 / 拉框查询 / 区域搜索 / 导航 / 切换风格</div><span class="path">src/components/BottomTools.vue</span></div>
+      <div class="card c-cyan"><span class="nm">实时数据栏<span class="tag">RealtimeBar</span></span><div class="ds">左上，7 类要素开关，点亮态以 <b>store.trafficOn</b> 为唯一来源（手动 / AI 同步）</div><span class="path">src/components/RealtimeBar.vue</span></div>
+      <div class="card c-cyan"><span class="nm">道路分级栏<span class="tag">RoadClassBar</span></span><div class="ds">顶部：总道路 / 高速 / 一级 / 二级 / 三级</div><span class="path">src/components/RoadClassBar.vue</span></div>
+      <div class="card c-cyan"><span class="nm">AI 助手<span class="tag">AIAssistant</span></span><div class="ds">右下悬浮按钮 + 对话框 · 文本 / 语音指令驱动全站功能</div><span class="path">src/components/AIAssistant.vue</span></div>
+      <div class="card c-cyan"><span class="nm">控制中心浮层<span class="tag">G2Charts</span></span><div class="ds">全局开关 <b>store.chartsOpen</b>，点其它按钮不关闭</div><span class="path">src/views/G2Charts.vue</span></div>
+      <div class="card c-cyan"><span class="nm">地图气泡 Popup<span class="tag">要素详情</span></span><div class="ds">L7 共享 Popup 复用更新 · 玻璃拟态样式</div><span class="path">地图点击事件</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 挂载渲染（App.vue 常驻壳 + &lt;RouterView&gt;）▼</div>
+
+  <!-- ================= B 应用编排与页面 ================= -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot c-blue" style="color:var(--blue)"></span>
+      <span class="t1" style="color:var(--blue)">B · Vue3 应用编排与页面层</span>
+      <span class="t2">9 个功能视图（8 路由 + 1 全局浮层）· 单例 reactive 状态 + provide/inject 响应式容器</span>
+      <span class="arch">src/main.js → src/router/index.js → src/views/*</span>
+    </div>
+    <div class="row">
+      <div class="card c-blue" style="flex:1.25"><span class="nm">App.vue —— 启动编排中枢</span>
+        <div class="ds">new <b>mapboxgl.Map</b>(streets-v12) → new L7 <b>Scene</b>；汉化 / fog / CN 边界过滤；地图 <b>load 后统一 boot</b>：initControl → initLayer → initTrafficLayers → initRoadClassLayers → 挂载 UI（坑：L7 图层必须先于 style 加载完成才可加）<br>
+        <b>provide('$scene_map')</b> 响应式容器（子组件 mounted 早于父级，注入引用等待赋值）+ <b>provide('$store')</b>；onMounted 预取天气 + 开场语音播报；DEV 下暴露 window.__scene / __map 调试桥</div>
+        <span class="path">src/App.vue</span>
+      </div>
+    </div>
+    <div class="grp">
+      <div class="gt">功能视图（路由 Router · createWebHistory）—— 薄组件，地图操作 + 数据 / API 调用 + 路由参数驱动</div>
+      <div class="row-in">
+        <div class="card c-blue"><span class="nm">首页 Home</span><div class="ds">飞回淄博全景，显示建筑 + 道路基础图层</div><span class="path">src/views/Home.vue</span></div>
+        <div class="card c-blue"><span class="nm">地球自转 Rotation</span><div class="ds">3D 视角自动环绕 → 无缝缩放进城</div><span class="path">src/views/Rotation.vue</span></div>
+        <div class="card c-blue"><span class="nm">城市视角 CityView</span><div class="ds">多级平滑飞行至街道尺度</div><span class="path">src/views/CityView.vue</span></div>
+        <div class="card c-blue"><span class="nm">驾车导航 Navigation</span><div class="ds">中文起终点 → <b>高德坐标前置解析</b> → 直喂 directions 控件</div><span class="path">src/views/Navigation.vue</span></div>
+        <div class="card c-blue"><span class="nm">区域搜索 AreaSearch</span><div class="ds">高德 geocode → 阿里 DataV 边界叠绘 + 实时天气</div><span class="path">src/views/AreaSearch.vue</span></div>
+        <div class="card c-blue"><span class="nm">切换风格 ChangeStyle</span><div class="ds">map.setStyle 10 种官方风格，?style= 驱动</div><span class="path">src/views/ChangeStyle.vue</span></div>
+        <div class="card c-blue"><span class="nm">事件信息 EventInfo</span><div class="ds">警情表格 + L7 Draw 拉框筛选（turf 空间查询）</div><span class="path">src/views/EventInfo.vue</span></div>
+        <div class="card c-blue"><span class="nm">地图测量 MapDraw</span><div class="ds">l7-draw 多边形 / 矩形 / 圆形 / 线段，面积 / 距离实时测</div><span class="path">src/views/MapDraw.vue</span></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card c-teal"><span class="nm">store.js —— 全局状态单例</span>
+        <div class="ds"><b>trafficOn</b>(7 图层镜像) · <b>roadClass</b> · <b>chartsOpen</b> · <b>weather</b> —— 手动操作与 AI 助手写入同一来源，UI 点亮相通</div>
+        <span class="path">src/store.js</span>
+      </div>
+      <div class="card c-teal"><span class="nm">Hooks —— 图表数据逻辑</span>
+        <div class="ds">useLeftTop（车辆密度）· useLeftBottom（拥堵流量 TOP10）· useRightTop（警情类型）→ G2Plot 配置（@opd/g2plot-vue 渲染）+ 设施统计卡（mockData 计数）</div>
+        <span class="path">src/Hooks/*.js · src/views/G2Charts.vue</span>
+      </div>
+      <div class="card c-teal"><span class="nm">基础设施</span>
+        <div class="ds">Element Plus（Popover / Table）· iconfont / 数字字体（index.html CDN）· 全局玻璃拟态样式</div>
+        <span class="path">src/main.js · assets/main.css</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 依赖注入 $scene_map / $store · 页面与组件直接操作图层注册表 API ▼</div>
+
+  <!-- ================= C 地图引擎 ================= -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot c-amber" style="color:var(--amber)"></span>
+      <span class="t1" style="color:var(--amber)">C · 地图渲染核心（引擎层）</span>
+      <span class="t2">Mapbox GL 底图 + AntV L7 图层体系 —— 图层一律「注册表 + 懒创建」，实例可跨模块复取</span>
+      <span class="arch">src/tools/init*.js</span>
+    </div>
+    <div class="row">
+      <div class="card c-amber" style="flex:1.1"><span class="nm">Mapbox GL JS 2.14 —— 底图容器</span>
+        <div class="ds">streets-v12 起步；<b>10 种官方风格</b> setStyle 切换；fog 大气、admin 边界 CN 过滤；MapboxLanguage 中文汉化；承载全部 L7 图层 / Popup / 导航控件</div>
+        <span class="path">src/App.vue · src/views/ChangeStyle.vue</span>
+      </div>
+      <div class="card c-amber" style="flex:1.1"><span class="nm">AntV L7 Scene —— 图层运行时</span>
+        <div class="ds">Mapbox 适配（mapInstance 复用同一画布）；图层生命周期 show / hide；L7 2.15 <b>getLayerByName 坑</b> → 全项目走模块内实例注册表取层</div>
+        <span class="path">src/App.vue（new Scene）</span>
+      </div>
+      <div class="card c-amber"><span class="nm">地图控件 initControl</span>
+        <div class="ds">缩放 Zoom / 全屏 Fullscreen / 底图主题 MapTheme（右下角）</div>
+        <span class="path">src/tools/initControl.js</span>
+      </div>
+    </div>
+    <div class="grp">
+      <div class="gt">图层注册表（boot 时只注册 scene 引用，首次显示才 addLayer —— 实例保留、复用显示隐藏）</div>
+      <div class="row-in">
+        <div class="card c-amber"><span class="nm">基础图层 initLayer</span>
+          <div class="ds">「淄博道路」LineLayer 全路网<b>动画流线</b> + 「淄博市」CityBuildingLayer <b>3D 建筑</b>（按高程拉伸 / 扫掠动画）→ 入 <b>baseLayerMap</b> 注册表</div>
+          <span class="path">src/tools/initLayer.js</span>
+        </div>
+        <div class="card c-amber"><span class="nm">交通图层 ×7 initTrafficLayers</span>
+          <div class="ds">camera 监控 220 · trafficLight 信号灯 231 · police 警员 60 · busRoute 公交 50 线 · congestion 拥堵 22 路 · heat 热力 336 点 · busStop 站点 225 —— 点击共享 Popup 弹详情；building / mainRoad 桥接基础图层</div>
+          <span class="path">src/tools/initTrafficLayers.js</span>
+        </div>
+        <div class="card c-amber"><span class="nm">道路分级 ×4 roadClassLayers</span>
+          <div class="ds">按 OSM type 切分 4 级 LineLayer：高速 motorway / 一级 trunk / 二级 primary / 三级 secondary·tertiary·支路；<b>total = 复用基础路网</b>；分级状态同步 store.roadClass</div>
+          <span class="path">src/tools/roadClassLayers.js</span>
+        </div>
+        <div class="card c-amber"><span class="nm">实例注册表 baseLayerMap / registry</span>
+          <div class="ds">App / Home / 实时栏 / 道路栏 / AI 执行器 全部经此取层实例，杜绝重名重建</div>
+          <span class="path">src/tools/initLayer.js（baseLayerMap）</span>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card c-violet"><span class="nm">mapbox-gl-directions —— 导航控件</span>
+        <div class="ds">方向/起终点输入 + 画线 + 全程缩放；<b>绕坑</b>：不喂中文地名，喂「高德解析后的 [lng,lat] 坐标数组」，输入框回显中文</div>
+        <span class="path">src/views/Navigation.vue</span>
+      </div>
+      <div class="card c-violet"><span class="nm">@antv/l7-draw —— 测量 / 拉框</span>
+        <div class="ds">多边形 / 矩形 / 圆形 / 线段绘制测量；事件拉框空间查询（turf）</div>
+        <span class="path">src/views/MapDraw.vue · EventInfo.vue</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider">▼ AI 动作 → aiExec 执行器：flyTo / setTrafficLayerVisible / selectRoadClass / router.push ▼</div>
+
+  <!-- ================= D AI 子系统 ================= -->
+  <div class="band" style="border-color: rgba(157,140,255,.35)">
+    <div class="btitle">
+      <span class="dot c-violet" style="color:var(--violet)"></span>
+      <span class="t1" style="color:var(--violet)">D · AI 助手子系统（自然语言驱动全站）</span>
+      <span class="t2">在线大模型与离线规则「双通道」，执行路径同一 —— 无 Key / 断网自动降级不降功能</span>
+      <span class="arch">src/components/AIAssistant.vue + src/tools/*</span>
+    </div>
+    <div class="row">
+      <div class="card c-violet" style="flex:1.1"><span class="nm">对话面板 AIAssistant.vue</span>
+        <div class="ds">悬浮按钮 + 消息列表 + 快捷指令 chips；忙碌态 LLM 标识；【反问确认】猜不到时列出候选问「是不是…」，用户「是 / 不是 / 1~3」驱动下一步；历史 ≤60 条展示 / 48 轮截断；LLM 本轮失败回滚历史再走离线</div>
+        <span class="path">src/components/AIAssistant.vue（617 行）</span>
+      </div>
+      <div class="card c-violet" style="flex:1"><span class="nm">通道① 在线 —— DeepSeek V4 Pro</span>
+        <div class="ds"><span class="kbd ka">x-api-key</span> Anthropic 兼容端点 <b>api.deepseek.com/anthropic/v1/messages</b>；SYSTEM 出行/查看分流规则；<b>12 个工具定义</b> tool_use ≤6 轮循环续接；thinking 块不展示；原始消息整条入史</div>
+        <span class="path">VITE_DEEPSEEK_KEY / MODEL（.env）</span>
+      </div>
+      <div class="card c-violet" style="flex:1"><span class="nm">通道② 离线 —— agent.js 规则引擎</span>
+        <div class="ds">关键词解析 parseCommand → 出行三分流（导航 / 从 A 到 B / 飞行）、图层别名表、道路分级表、风格 / 搜索 / 测量 / 图表关键词；18 图表 × 5 主题配置；纯聊 / 天气问答应答</div>
+        <span class="path">src/tools/agent.js</span>
+      </div>
+      <div class="card c-violet" style="flex:1.15"><span class="nm">统一执行器 aiExec.js ★ 双通道汇合</span>
+        <div class="ds"><b>execTool（LLM 工具）≡ execRuleAction（规则动作）</b> 同一条链路：get_status · map_action · fly_to · set_road_class · set_traffic_layer(开图层自动取景) · set_control_center · goto_page · area_search · change_style · map_measure · start_navigation</div>
+        <span class="path">src/tools/aiExec.js</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card c-violet" style="flex:1"><span class="nm">places.js —— 飞行地名多级解析</span>
+        <div class="ds">① 区县 / 地标快表 → ② 路网 <b>306 个唯一路名</b>（取线段中点）→ ③ POI 医院 / 博物馆 / 景区 / 商场 / 小区 → ④ Mapbox geocode 在线兜底（3.5s 超时）→ ⑤ 候选名建议</div>
+        <span class="path">src/tools/places.js</span>
+      </div>
+      <div class="card c-violet" style="flex:.9"><span class="nm">speech.js —— 语音播报</span>
+        <div class="ds">Web Speech API 中文队列：启动就绪播报 / 交通事件实时播报（可开关）</div>
+        <span class="path">src/tools/speech.js</span>
+      </div>
+      <div class="card c-violet" style="flex:1.4"><span class="nm">AI 执行效果（对现有功能只驱动不重写）</span>
+        <div class="ds">地图视角 flyTo / easeTo · 图层注册表 show / hide（自动取景）· 道路分级 · store 状态 · <b>router.push 带 query</b> 直达页面二级动作（导航、区域搜索、风格点选、测量工具）—— 与手动点击同一套流程，页面无需为 AI 特设接口</div>
+        <span class="path">二次页面驱动：Navigation / AreaSearch / ChangeStyle / MapDraw 均 watch route.query</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 读写 store 镜像 · 图层注册表 · 静态 GeoJSON 引用 ▼</div>
+
+  <!-- ================= E 数据层 ================= -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot c-teal" style="color:var(--teal)"></span>
+      <span class="t1" style="color:var(--teal)">E · 数据层（本地打包 + 内存生成）</span>
+      <span class="t2">真实几何优先，公安 / 交通态势敏感数据固定种子模拟可复现，实时字段 ticker 波动</span>
+      <span class="arch">src/assets/GIS_Data + src/tools/mockData.js</span>
+    </div>
+    <div class="row">
+      <div class="card c-teal"><span class="nm">OSM 真实几何</span>
+        <div class="ds">Zibo_roads 路网 <b>7557 段</b>（动画流线 / 拥堵几何 / 路名解析共用）· Zibo_Buildings 建筑（3D 高程）· traffic_lights 信号灯（Overpass）</div>
+        <span class="path">assets/GIS_Data/*.json</span>
+      </div>
+      <div class="card c-teal"><span class="nm">高德公交（真实）</span>
+        <div class="ds">bus_routes <b>50 条</b>线路（按线路色渲染）+ bus_stops <b>225 站</b></div>
+        <span class="path">assets/GIS_Data/bus_*.json</span>
+      </div>
+      <div class="card c-teal"><span class="nm">POI 五类</span>
+        <div class="ds">医院 / 博物馆 / 景区 / 商场 / 住宅小区 —— 供飞行地名命中与详情展示</div>
+        <span class="path">assets/GIS_Data/hospital.json 等</span>
+      </div>
+      <div class="card c-teal"><span class="nm">模拟业务数据 mockData.js</span>
+        <div class="ds"><b>mulberry32 固定种子</b> 20260902：摄像头沿主路 ~1km 布设 220 · 警员 60 · 拥堵 22（匹配真实路名几何）· 热力 336 · 警情 28 · 区县人口车辆 · 实时字段波动</div>
+        <span class="path">src/tools/mockData.js</span>
+      </div>
+      <div class="card c-teal"><span class="nm">密钥 .env（不入库）</span>
+        <div class="ds"><span class="kbd">VITE_MAPBOX_TOKEN</span><span class="kbd kd">VITE_AMAP_KEY</span><span class="kbd kg">VITE_DEEPSEEK_KEY</span> + MODEL；GitHub 推送拦截密钥提交</div>
+        <span class="path">.env · .gitignore</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 浏览器直连 REST · 密钥走 VITE_ 环境变量 ▼</div>
+
+  <!-- ================= F 外部服务 ================= -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot c-red" style="color:var(--red)"></span>
+      <span class="t1" style="color:var(--red)">F · 外部开放服务（浏览器直连 REST / SDK）</span>
+      <span class="t2">全部可选降级：天气失败回退占位 · AI 失败走规则 · 地理编码失败走本地表</span>
+      <span class="arch">无后端代理，CORS 开放接口</span>
+    </div>
+    <div class="row">
+      <div class="card c-red"><span class="nm">Mapbox</span>
+        <div class="ds">瓦片底图 + 10 风格 · <b>Geocoding</b> 中文地理编码兜底（country=cn&language=zh-Hans）· <b>Directions</b> 驾车路线（directions 控件内置）· mapbox-gl-language 汉化插件</div>
+        <span class="path">VITE_MAPBOX_TOKEN</span>
+      </div>
+      <div class="card c-red"><span class="nm">高德开放平台</span>
+        <div class="ds"><b>geocode</b> 地理编码（导航起终点精确前置解析 / 区域搜索）· <b>weather</b> 实时天气（370300 淄博）· 公交线路 / 站点（离线采集入库）</div>
+        <span class="path">VITE_AMAP_KEY</span>
+      </div>
+      <div class="card c-red"><span class="nm">阿里 DataV</span>
+        <div class="ds">geo.datav.aliyun.com 行政区划边界 JSON（区域搜索叠绘）</div>
+        <span class="path">/areas_v3/bound/&lt;adcode&gt;_full.json</span>
+      </div>
+      <div class="card c-red"><span class="nm">DeepSeek</span>
+        <div class="ds">Anthropic 协议端点多轮对话 + 函数调用（tool_use）</div>
+        <span class="path">api.deepseek.com/anthropic</span>
+      </div>
+      <div class="card c-red"><span class="nm">浏览器原生</span>
+        <div class="ds">Web Speech Synthesis 中文播报 · SpeechRecognition（语音输入预留）</div>
+        <span class="path">speech.js</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 开发 / 验证辅助 ▼</div>
+
+  <!-- ================= G 工程与验证 ================= -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot c-blue" style="color:#7fb2ff"></span>
+      <span class="t1" style="color:#7fb2ff">G · 工程与端到端验证（scripts/）</span>
+      <span class="t2">Vite dev/build · Edge CDP 无头验证（模块 DEV 调试桥 window.__scene / __traffic / __roads / __ai）</span>
+      <span class="arch">scripts/</span>
+    </div>
+    <div class="row">
+      <div class="card c-blue" style="flex:.9"><span class="nm">analyze-roads.mjs</span><div class="ds">路网数据切分统计（分级选段）</div><span class="path">scripts/analyze-roads.mjs</span></div>
+      <div class="card c-blue" style="flex:1.1"><span class="nm">CDP 验证 ×3</span><div class="ds">cdp-smoke 启动冒烟 · cdp-verify 导航 / 图层 / 风格断言 · cdp-layer 图层开关状态验证 —— 连 localhost:9222 Edge 调试口执行</div><span class="path">scripts/cdp-*.mjs</span></div>
+      <div class="card c-blue" style="flex:.9"><span class="nm">shot-v1bar.mjs</span><div class="ds">1440×900 大屏截图（logs/）</div><span class="path">scripts/shot-v1bar.mjs</span></div>
+      <div class="card c-blue" style="flex:.9"><span class="nm">构建运行</span><div class="ds">pnpm dev → :5173 · pnpm build → dist/（路由 history 模式）</div><span class="path">vite.config.js（@ 别名）</span></div>
+    </div>
+  </div>
+
+  <!-- ================= 链路 ================= -->
+  <div class="flow-wrap">
+    <div class="flow">
+      <div class="ft" style="color:var(--cyan)">◆ 链路 1 · 启动链路（保证图层晚于 style 加载）</div>
+      <div class="steps">
+        <div class="fstep"><span class="sno">① 入口</span>index.html → main.js（ElementPlus + Router）→ App.vue</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">② 建图</span>new mapboxgl.Map + L7 Scene（同画布）· 汉化 · fog · 边界过滤</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">③ boot</span>map 加载完成：initControl → initLayer → initTrafficLayers → initRoadClassLayers（只注册不建层）</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">④ 挂载</span>sceneMap 赋值 → UI 组件（inject 生效）· Home 默认视野</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">⑤ 收尾</span>fetchWeather 预取 + 开场语音「系统已就绪」</div>
+      </div>
+    </div>
+    <div class="flow">
+      <div class="ft" style="color:var(--violet)">◆ 链路 2 · AI 指令链路（文本 / 语音 → 页面功能）</div>
+      <div class="steps">
+        <div class="fstep"><span class="sno">① 输入</span>文字输入 / 快捷指令填入 → send()</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">② 分流</span>有 Key → DeepSeek 在线多轮 tool_use；无 Key / 失败 → agent.js 规则解析；含糊 → 反问确认</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">③ 执行</span>execTool / execRuleAction 同一执行器：flyTo / 图层开关+取景 / 分级 / router.push(query)</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">④ 反馈</span>页面动作小字提示 + 中文回复 + 语音播报</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">⑤ 状态</span>store 镜像同步 → 实时栏 / 控制中心点亮一致</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 图例 ================= -->
+  <div class="legend">
+    <span class="lg"><span class="sw" style="background:var(--cyan)"></span>A 呈现层 UI</span>
+    <span class="lg"><span class="sw" style="background:var(--blue)"></span>B 应用 / 页面编排</span>
+    <span class="lg"><span class="sw" style="background:var(--amber)"></span>C 地图 / 图层引擎</span>
+    <span class="lg"><span class="sw" style="background:var(--violet)"></span>D AI 助手子系统</span>
+    <span class="lg"><span class="sw" style="background:var(--teal)"></span>E 数据层（本地）</span>
+    <span class="lg"><span class="sw" style="background:var(--red)"></span>F 外部开放服务</span>
+    <span class="lg"><span class="sw" style="background:#7fb2ff"></span>G 工程 / 验证</span>
+    <span class="lg" style="margin-left:auto">「点哪飞哪」：所有图层懒创建 · 实例注册表复用 · 一键开关零重绘</span>
+  </div>
+  <div class="foot-note">架构要点：纯前端零后端 · Vue3 组合式 API · L7 图层晚于 style 加载统一 boot · 图层开关唯一入口 setTrafficLayerVisible（手动 / AI / 实时栏同链路）· 地图操作组件化（flyTo / show/hide / router）</div>
+</div>
+</body>
+</html>

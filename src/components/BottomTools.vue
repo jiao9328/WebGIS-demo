@@ -33,6 +33,13 @@
         </button>
         <p>控制中心</p>
       </div>
+      <!-- 数据管理：开关式浮层，SQL Server 业务表增删改查（写库后地图图层实时刷新） -->
+      <div class="item" :class="{ on: store.dataPanelOpen }" @click="store.dataPanelOpen = !store.dataPanelOpen">
+        <button class="toggle-btn">
+          <i class="iconfont icon-ziliaoku"></i>
+        </button>
+        <p>数据管理</p>
+      </div>
       <el-popover placement="top" :width="100" trigger="click" popper-style="background-color: #53697670;color:#fff">
         <template #reference>
           <div class="item">

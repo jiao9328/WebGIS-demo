@@ -18,13 +18,31 @@
       <p class="header-sub">ZIBO SMART TRANSPORTATION MANAGEMENT SYSTEM</p>
     </div>
 
-    <!-- 右：留空保持标题严格居中 -->
-    <div class="header-right"></div>
+    <!-- 右：当前用户 + 退出登录（标题由 .header-center absolute 居中，不受两侧内容影响） -->
+    <div class="header-right">
+      <div class="user-box">
+        <span class="user-name">👤 {{ store.user?.display_name || store.user?.username || '未登录' }}</span>
+        <button class="logout-btn" @click="onLogout">退出登录</button>
+      </div>
+    </div>
   </header>
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from "vue";
+import { computed, ref, onMounted, inject } from "vue";
+import { useRouter } from 'vue-router'
+import { clearAuthUser } from '../store'
+
+const { store } = inject('$store')
+const router = useRouter()
+
+// 退出登录：清登录态 + 关闭可能残留的全局面板（数据管理/控制中心），回登录页
+const onLogout = () => {
+  clearAuthUser()
+  store.chartsOpen = false
+  store.dataPanelOpen = false
+  router.push('/login')
+}
 
 const year = ref(0);
 const month = ref(0);
@@ -150,5 +168,44 @@ const time2 = computed(() => {
   font-size: 20px;
   font-family: Consolas, monospace;
   letter-spacing: 1px;
+}
+
+/* 右：用户胶囊 + 退出按钮（蓝色细边框，hover 亮起） */
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px 5px 14px;
+  border: 1px solid rgba(56, 148, 255, 0.4);
+  border-radius: 20px;
+  background: rgba(2, 16, 36, 0.5);
+  backdrop-filter: blur(4px);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.user-box:hover {
+  border-color: rgba(79, 195, 255, 0.8);
+  box-shadow: 0 0 12px rgba(43, 140, 255, 0.25);
+}
+.user-name {
+  font-size: 13px;
+  color: #7dd3ff;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.logout-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #fff;
+  background: linear-gradient(90deg, #1769e0, #2b8cff);
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.2s;
+}
+.logout-btn:hover {
+  filter: brightness(1.2);
 }
 </style>

@@ -14,7 +14,8 @@
         :class="{ on: store.trafficOn[row.key] }"
         @click="toggle(row)"
       >
-        <i class="iconfont" :class="row.icon"></i>
+        <i v-if="row.icon" class="iconfont" :class="row.icon"></i>
+        <span v-else class="rt-emoji">{{ row.emoji }}</span>
         <span class="rt-name">{{ row.label }}</span>
         <span class="rt-switch">
           <span class="rt-dot"></span>
@@ -36,15 +37,16 @@ import { setTrafficLayerVisible } from '../tools/initTrafficLayers'
 const { store } = inject('$store')
 const show = ref(true)
 
-// 图层行：复用交通图层注册表（initTrafficLayers 7 类）
+// 图层行：复用交通图层注册表（initTrafficLayers 7 类 L7 图层）+ 前端动态车辆模拟层（emoji 无 iconfont 字形）
 const rows = [
-  { key: 'camera', label: '监控探头', icon: 'icon-supervision-full', dot: '#00e5ff' },
-  { key: 'trafficLight', label: '信号灯', icon: 'icon-icon-test', dot: '#22c55e' },
-  { key: 'police', label: '警员分布', icon: 'icon-shouye-copy', dot: '#3d7bff' },
-  { key: 'congestion', label: '道路拥堵', icon: 'icon-daolu', dot: '#ff3b30' },
-  { key: 'heat', label: '热力图', icon: 'icon-paint', dot: '#ff9500' },
-  { key: 'busRoute', label: '公交线路', icon: 'icon-daohang', dot: '#00c2ff' },
-  { key: 'busStop', label: '公交站点', icon: 'icon-shoucang', dot: '#4dd8ff' },
+  { key: 'camera', label: '监控探头', icon: 'icon-supervision-full' },
+  { key: 'trafficLight', label: '信号灯', icon: 'icon-icon-test' },
+  { key: 'police', label: '警员分布', icon: 'icon-shouye-copy' },
+  { key: 'congestion', label: '道路拥堵', icon: 'icon-daolu' },
+  { key: 'heat', label: '热力图', icon: 'icon-paint' },
+  { key: 'busRoute', label: '公交线路', icon: 'icon-daohang' },
+  { key: 'busStop', label: '公交站点', icon: 'icon-shoucang' },
+  { key: 'vehicle', label: '动态车辆', emoji: '🚗' },
 ]
 
 // 打开/关闭对应图层（首次打开懒建，实例保留复用）；store 镜像随后自动更新
@@ -165,6 +167,12 @@ const toggle = (row) => {
 .rt-item .iconfont {
   font-size: 15px;
   color: rgba(125, 211, 255, 0.8);
+}
+
+/* 无 iconfont 字形的行（动态车辆）用 emoji 占位 */
+.rt-item .rt-emoji {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .rt-name {

@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>淄博智慧公交系统 · 架构图</title>
+<style>
+  :root {
+    --bg: #040b1c;
+    --panel: rgba(13, 32, 66, .72);
+    --panel2: rgba(9, 24, 52, .85);
+    --line: rgba(86, 160, 255, .30);
+    --line2: rgba(120, 200, 255, .45);
+    --txt: #d7e8ff;
+    --dim: #8fb3dd;
+    --cyan: #00c8ff;
+    --blue: #4d9fff;
+    --violet: #9d8cff;
+    --teal: #2dd4bf;
+    --amber: #ffb020;
+    --red: #ff6b6b;
+    --green: #34d977;
+    --mono: "Consolas", "Cascadia Code", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background:
+      radial-gradient(1100px 480px at 22% -8%, rgba(0,120,255,.14), transparent 60%),
+      radial-gradient(900px 420px at 85% 2%, rgba(0,200,255,.10), transparent 60%),
+      var(--bg);
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: var(--txt);
+  }
+  .diagram { width: 1740px; margin: 0 auto; padding: 26px 30px 36px; }
+
+  /* 标题 */
+  .head { display: flex; align-items: center; gap: 20px; padding: 14px 22px; margin-bottom: 20px;
+    background: linear-gradient(90deg, rgba(0,150,110,.28), rgba(0,180,170,.16), rgba(0,150,110,.28));
+    border: 1px solid var(--line2); border-radius: 14px;
+    box-shadow: 0 0 26px rgba(0,200,140,.16), inset 0 0 40px rgba(0,160,120,.05); }
+  .head .logo { width: 56px; height: 56px; border-radius: 14px; flex: 0 0 56px;
+    background: linear-gradient(135deg, #00d68a, #0096b0); display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 20px; color: #fff; box-shadow: 0 0 18px rgba(0,230,150,.5); }
+  .head h1 { font-size: 27px; letter-spacing: 2px; background: linear-gradient(90deg,#fff,#9bf5d0); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .head .sub { margin-top: 4px; font-size: 13px; color: var(--dim); letter-spacing: 1px; }
+  .head .chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; max-width: 640px; justify-content: flex-end; }
+  .chip { font-size: 12px; padding: 4px 12px; border-radius: 20px; white-space: nowrap;
+    border: 1px solid var(--line2); color: #bfe3ff; background: rgba(0,120,255,.12); }
+  .chip b { color: var(--green); font-weight: 700; }
+
+  /* 层带 */
+  .band { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 13px 16px 16px; position: relative; }
+  .band > .btitle { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .band > .btitle .dot { width: 10px; height: 10px; border-radius: 3px; transform: rotate(45deg); box-shadow: 0 0 10px currentColor; }
+  .band > .btitle .t1 { font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+  .band > .btitle .t2 { font-size: 12px; color: var(--dim); letter-spacing: .5px; line-height: 1.6; }
+  .band > .btitle .arch { margin-left: auto; font-size: 11px; color: var(--dim); font-family: var(--mono); opacity: .8; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row + .row { margin-top: 12px; }
+  .grp { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; background: rgba(255,255,255,.02); }
+  .grp .gt { font-size: 12px; color: var(--cyan); margin-bottom: 8px; letter-spacing: 1px; font-weight: 600; }
+  .grp .row-in { display: flex; gap: 10px; flex-wrap: wrap; }
+  .grp .row-in + .row-in { margin-top: 10px; }
+
+  /* 卡片 */
+  .card { flex: 1 1 0; min-width: 172px; max-width: 100%;
+    background: var(--panel2); border: 1px solid rgba(100,170,255,.22);
+    border-left: 3px solid var(--cc, var(--cyan)); border-radius: 8px;
+    padding: 9px 12px; position: relative; }
+  .card.core { box-shadow: 0 0 14px rgba(52,217,119,.18); border-color: rgba(52,217,119,.35); }
+  .card .nm { font-size: 13.5px; font-weight: 700; color: var(--nc, #eaf4ff); letter-spacing: .3px; line-height: 1.45; }
+  .card .ds { margin-top: 6px; font-size: 12px; line-height: 1.72; color: #a9c4e2; word-break: break-word; }
+  .card .ds b { color: #cfe6ff; font-weight: 600; }
+  .card .path { margin-top: 7px; font-size: 11px; color: var(--dim); font-family: var(--mono);
+    opacity: .95; display: block; word-break: break-all; line-height: 1.5; }
+  /* 能力层级徽标：核心 / 业务 / 通用 / 预留 */
+  .act { display: inline-block; font-size: 10px; font-weight: 700; border-radius: 9px; padding: 1px 7px; margin-right: 6px; vertical-align: 1px; white-space: nowrap; }
+  .act.core { color: #7ceba4; border: 1px solid rgba(52,217,119,.6); background: rgba(52,217,119,.10); }
+  .act.biz  { color: #ffd27a; border: 1px solid rgba(255,176,32,.6); background: rgba(255,176,32,.10); }
+  .act.uni  { color: #8ab8ff; border: 1px solid rgba(138,184,255,.55); background: rgba(77,159,255,.10); }
+  .act.rsv  { color: #e6c6ff; border: 1px solid rgba(190,120,255,.5); background: rgba(157,140,255,.10); }
+  .c-core { --cc: var(--green); }
+  .c-biz  { --cc: var(--amber); }
+  .c-uni  { --cc: var(--blue); }
+
+  /* 分隔 */
+  .divider { height: 32px; display: flex; align-items: center; justify-content: center; gap: 12px;
+    color: rgba(140,190,235,.55); font-size: 11.5px; letter-spacing: 2px; }
+  .divider::before, .divider::after { content: ""; width: 90px; height: 0; border-top: 1px dashed rgba(100,170,255,.4); }
+
+  /* 模块总览表 */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  th { font-size: 12.5px; color: var(--cyan); font-weight: 700; padding: 8px 14px; text-align: left;
+    border-bottom: 1px solid var(--line2); letter-spacing: 1px; white-space: nowrap;
+    background: rgba(0,120,255,.08); }
+  td { padding: 7px 14px; border-bottom: 1px solid rgba(86,160,255,.14); color: #cfe3fa;
+    line-height: 1.7; vertical-align: top; word-break: break-word; }
+  td + td, th + th { border-left: 1px solid rgba(86,160,255,.10); }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: rgba(255,255,255,.025); }
+  td.mod { font-weight: 700; color: #eaf4ff; width: 26%; }
+  td.why { color: #b3cdec; width: 36%; font-size: 11.5px; }
+  td.src { color: var(--dim); width: 26%; font-size: 11.5px; }
+  td.cell-m { width: 96px; white-space: nowrap; text-align: center; }
+  .mapping-note { margin-top: 8px; font-size: 11px; color: var(--dim); }
+
+  /* 链路 */
+  .flow-wrap { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+  .flow { background: linear-gradient(180deg, rgba(20,48,96,.6), rgba(10,28,60,.75));
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .flow .ft { font-size: 13.5px; font-weight: 700; margin-bottom: 10px; letter-spacing: .5px; }
+  .flow .steps { display: flex; align-items: stretch; gap: 6px; }
+  .fstep { flex: 1; min-width: 0; background: rgba(6,16,36,.8); border: 1px solid rgba(100,170,255,.18);
+    border-radius: 7px; padding: 8px 10px; font-size: 12px; line-height: 1.65; color: #bcd7f5; word-break: break-word; }
+  .fstep .sno { display: block; font-size: 10px; color: var(--cyan); margin-bottom: 2px; font-weight: 700; }
+  .farrow { align-self: center; color: var(--cyan); font-size: 16px; flex: 0 0 auto; }
+
+  .legend { margin-top: 14px; display: flex; gap: 22px; flex-wrap: wrap; align-items: center; font-size: 11.5px; color: var(--dim); }
+  .legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .foot-note { margin-top: 10px; font-size: 11px; color: #6e8db0; text-align: center; letter-spacing: .5px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="diagram">
+
+  <!-- 标题 -->
+  <div class="head">
+    <div class="logo">公</div>
+    <div>
+      <h1>淄博智慧公交系统 · WebGIS 运行监测平台 —— 系统架构设计</h1>
+      <div class="sub">从零开发的 WebGIS 大屏（Vite 前端 + Express 认证服务 + MySQL）· 设计原则：仿真引擎与渲染解耦、图层统一注册表管理、全局单一状态源、登录门禁先行（M0）、账号密码仅 bcrypt 哈希入库</div>
+    </div>
+    <div class="chips">
+      <span class="chip">50 条真实线路</span><span class="chip">225 个真实站点</span><span class="chip"><b>~600 辆仿真运营车</b></span>
+      <span class="chip">Vue 3 + AntV L7 + Mapbox GL</span><span class="chip"><b>Express 认证服务 + MySQL 8</b></span>
+      <span class="chip"><b>bcrypt 哈希 · 无明文密码</b></span>
+    </div>
+  </div>
+
+  <!-- ============ A 呈现层 ============ -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot" style="color:var(--cyan)"></span>
+      <span class="t1" style="color:var(--cyan)">A · 浏览器大屏 UI（呈现层）</span>
+      <span class="t2">全屏地图 + 玻璃拟态悬浮面板 —— 未登录一律停在登录页，鉴权通过才进入大屏</span>
+      <span class="arch">src/components/*</span>
+    </div>
+    <div class="row">
+      <div class="card c-biz"><span class="nm">顶部标题栏 Header</span>
+        <div class="ds">系统名 + 时钟 + 实时运营指标（在线车辆 / 准点率）</div>
+        <span class="path">src/components/Header.vue</span></div>
+      <div class="card c-biz"><span class="nm">底部工具条 BottomTools</span>
+        <div class="ds">悬浮胶囊：首页 · 线网总览 · 车辆调度 · 控制中心 · 测量 · 拉框 · 区域搜索 · 换乘查询 · 导航 · 风格</div>
+        <span class="path">src/components/BottomTools.vue</span></div>
+      <div class="card c-biz"><span class="nm">运营实时栏 BusStatusBar</span>
+        <div class="ds">左上：车辆 / 线路 / 站点 / 客流热力 / 专用道 / 场站 / 路网 要素开关，点亮态以 store 镜像为唯一来源</div>
+        <span class="path">src/components/BusStatusBar.vue</span></div>
+      <div class="card c-biz"><span class="nm">线路分级栏 RouteClassBar</span>
+        <div class="ds">顶部：全部线路 / 快线 / 干线 / 支线 分级渲染切换</div>
+        <span class="path">src/components/RouteClassBar.vue</span></div>
+      <div class="card c-biz"><span class="nm">AI 出行助手</span>
+        <div class="ds">右下悬浮：快捷指令如「2 路车到哪了」「35 路还有几分钟到淄博站」</div>
+        <span class="path">src/components/AIAssistant.vue</span></div>
+      <div class="card c-core"><span class="act core">核心</span><span class="nm">三型信息卡片</span>
+        <div class="ds">地图气泡升级为卡片：车辆卡（线路·下一站·到站分钟·满载率）、站台卡（各线下一班倒计时）、线路卡（车辆分布 + 时刻表）</div>
+        <span class="path">Popup 模板 + 卡片组件</span></div>
+      <div class="card c-core"><span class="act core">核心</span><span class="nm">登录页 Login（门禁单页）</span>
+        <div class="ds">玻璃拟态登录页（风格与大屏一致）：账号 + 密码 → POST /api/auth/login；<b>路由守卫</b>：未带 token 访问任何页面 → 重定向 /login；401 统一拦截跳回登录；Header 右上角当前用户 + 退出按钮</div>
+        <span class="path">src/views/Login.vue · src/router/index.js</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 访问系统 → 无 token 一律重定向 /login；登录成功签发 token 后放行 ▼</div>
+
+  <!-- ============ S 登录认证与账号体系 ============ -->
+  <div class="band" style="border-color: rgba(244,114,182,.4)">
+    <div class="btitle">
+      <span class="dot" style="color:#f472b6"></span>
+      <span class="t1" style="color:#f472b6">S · 登录认证与账号体系（M0 前置 · 前后端一体）</span>
+      <span class="t2">浏览器只与同源 /api 通信（Vite dev 代理 → 认证服务），账号密码在 MySQL 中以 bcrypt 加盐哈希存储，明文永不落库</span>
+      <span class="arch">server/ + scripts/schema.sql</span>
+    </div>
+    <div class="row">
+      <div class="card c-uni" style="flex:1"><span class="act uni">通用</span><span class="nm">路由守卫 + 会话注入</span>
+        <div class="ds">router.beforeEach 校验 token 存在与 /api/auth/me 有效性；axios 请求拦截器统一带 Authorization，响应 401 → 清 token 跳登录页</div>
+        <span class="path">src/router/guard.js · src/tools/auth.js</span></div>
+      <div class="card c-core" style="flex:1.25"><span class="act core">核心</span><span class="nm">认证服务 auth-server</span>
+        <div class="ds">独立 Node 进程（Express）<b>http://localhost:3001</b>：POST /api/auth/login 校验账号 · POST /api/auth/logout · GET /api/auth/me 会话校验 · 预留 /register 注册与用户管理；登录成功签发 <b>JWT</b>（7 天有效）</div>
+        <span class="path">server/index.js</span></div>
+      <div class="card c-core" style="flex:1.25"><span class="act core">核心</span><span class="nm">★ SQL 账号库（MySQL 8）</span>
+        <div class="ds">库 <b>zibo_bus</b> · 表 <b>users</b>：id 自增主键 / username <b>唯一索引</b> / password_hash（bcrypt 加盐，60 位）/ nickname / role（admin · viewer）/ status / last_login_at / created_at —— 建库建表脚本 + 初始管理员种子账号</div>
+        <span class="path">scripts/schema.sql · server/db.js</span></div>
+      <div class="card c-uni" style="flex:1"><span class="act uni">通用</span><span class="nm">安全要点</span>
+        <div class="ds">bcrypt 哈希 10 轮加盐 · 登录接口限速防爆破 · DB 连接串与 JWT_SECRET 走 .env（不入库）· 生产环境 HTTPS + 前端构建产物同源托管</div>
+        <span class="path">.env（server 段）</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 鉴权通过 → App.vue 常驻壳挂载 + &lt;RouterView&gt; 页面切换 ▼</div>
+
+  <!-- ============ B 编排与页面 ============ -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot" style="color:var(--blue)"></span>
+      <span class="t1" style="color:var(--blue)">B · Vue3 应用编排与页面层</span>
+      <span class="t2">10 路由 + 1 全局浮层；页面按「运营管理 / 乘客服务 / 通用 GIS」三组划分</span>
+      <span class="arch">src/main.js · src/router/index.js · src/store.js</span>
+    </div>
+    <div class="row">
+      <div class="card c-uni" style="flex:1.3"><span class="act uni">通用</span><span class="nm">App.vue —— 启动编排中枢</span>
+        <div class="ds">new mapboxgl.Map(streets-v12) → new L7 Scene（同画布）；汉化 / fog / CN 边界过滤；地图 style 加载完成后统一 boot：initControl → initLayer → initBusLayers（含启动仿真引擎）→ initRouteClassLayers → 挂载 UI；provide('$scene_map'/'$store') 响应式容器</div>
+        <span class="path">src/App.vue</span></div>
+      <div class="card c-core" style="flex:1"><span class="act core">核心</span><span class="nm">store.js —— 全局状态单例</span>
+        <div class="ds"><b>busOn</b>（7 要素开关镜像）· <b>routeClass</b> · <b>busVehicles</b>（仿真快照 ~600 车）· <b>arrivals</b>（站台到站缓存）· <b>opsAlerts</b>（运营异常）· <b>weather</b> —— 引擎 / UI / AI 共同读写</div>
+        <span class="path">src/store.js</span></div>
+    </div>
+    <div class="grp">
+      <div class="gt">功能页面 —— 运营管理 4 · 乘客服务 3 · 通用 GIS 5</div>
+      <div class="row-in">
+        <div class="card c-biz"><span class="nm">首页 / 线网总览 Home</span><div class="ds">默认视野飞淄博线网全景 + 车辆运行图</div><span class="path">views/Home.vue</span></div>
+        <div class="card c-core"><span class="act core">核心</span><span class="nm">车辆调度 Vehicles</span><div class="ds">线路筛选 + 车辆状态列表（运行/停站/回场/异常红标）+ 点击定位追踪、开启尾迹</div><span class="path">views/Vehicles.vue（/vehicles）</span></div>
+        <div class="card c-biz"><span class="nm">运营异常 OpsEvent</span><div class="ds">晚点 / 抛锚故障 / 客流拥挤 / 临时绕行事件列表，点击定位 + 拉框空间筛选</div><span class="path">views/OpsEvent.vue</span></div>
+        <div class="card c-core"><span class="act core">核心</span><span class="nm">线路详情抽屉 BusLineDrawer</span><div class="ds">站点序列表（各站下一班倒计时）、在线车辆分布、发车间隔 / 首末班（跨页浮层）</div><span class="path">components/BusLineDrawer.vue</span></div>
+        <div class="card c-biz"><span class="nm">换乘查询 Transfer</span><div class="ds">A→B：基于「线路-站点共站图」BFS 求直达 / 一次换乘方案，列换乘站与等车分钟</div><span class="path">views/Transfer.vue（/transfer）</span></div>
+        <div class="card c-biz"><span class="nm">出行导航 Navigation</span><div class="ds">驾车路线规划 + 起终点中文解析吸附最近公交站，附到站预报</div><span class="path">views/Navigation.vue</span></div>
+        <div class="card c-uni"><span class="nm">地球自转 Rotation</span><div class="ds">3D 开场动画（落点淄博站枢纽）</div><span class="path">views/Rotation.vue</span></div>
+        <div class="card c-uni"><span class="nm">城市视角 CityView</span><div class="ds">多级飞行降至街道尺度</div><span class="path">views/CityView.vue</span></div>
+        <div class="card c-uni"><span class="nm">区域搜索 AreaSearch</span><div class="ds">行政区边界叠绘 + 实时天气</div><span class="path">views/AreaSearch.vue</span></div>
+        <div class="card c-uni"><span class="nm">地图测量 MapDraw</span><div class="ds">l7-draw 多边形/矩形/圆形/线段，面积距离实时测</div><span class="path">views/MapDraw.vue</span></div>
+        <div class="card c-uni"><span class="nm">风格切换 ChangeStyle</span><div class="ds">10 种官方底图风格</div><span class="path">views/ChangeStyle.vue</span></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">控制中心浮层 G2Charts</span>
+        <div class="ds">全局开关浮层（点其它按钮不关闭）：各区县在运车辆 / 线路满载率 TOP10 / 客流时段曲线 / 准点率与异常分布 + 设施统计卡</div>
+        <span class="path">views/G2Charts.vue</span></div>
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">Hooks 图表数据逻辑</span>
+        <div class="ds">useLeftTop / useLeftBottom / useRightTop：从 <b>store 实时快照聚合</b>（busVehicles / arrivals / opsAlerts）→ G2Plot 配置，ticker 驱动图表跳动</div>
+        <span class="path">src/Hooks/use*.js</span></div>
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">基础设施</span>
+        <div class="ds">Element Plus · iconfont / 数字字体 · 玻璃拟态全局样式 · 路由 query 驱动页面二级动作 · 登录态注入见 S 带（守卫 / axios 拦截器）</div>
+        <span class="path">src/main.css · index.html</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 页面 / 组件经 $scene_map、$store 注入与图层注册表 API 交互 ▼</div>
+
+  <!-- ============ C 引擎层 ============ -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot" style="color:var(--amber)"></span>
+      <span class="t1" style="color:var(--amber)">C · 地图渲染核心 + 车辆仿真引擎（引擎层）</span>
+      <span class="t2">渲染只认「注册表 + 快照」：图层懒创建复取实例，仿真引擎输出与渲染完全解耦</span>
+      <span class="arch">src/tools/*</span>
+    </div>
+    <div class="row">
+      <div class="card c-uni" style="flex:1"><span class="act uni">通用</span><span class="nm">Mapbox GL JS —— 底图容器</span>
+        <div class="ds">streets-v12 起步 + 10 风格 setStyle 切换；fog、CN 边界过滤、MapboxLanguage 汉化；承载全部图层 / 卡片 / 导航控件</div>
+        <span class="path">App.vue · ChangeStyle.vue</span></div>
+      <div class="card c-uni" style="flex:1"><span class="act uni">通用</span><span class="nm">AntV L7 Scene —— 图层运行时</span>
+        <div class="ds">图层生命周期 show/hide + Popup 机制；L7 getLayerByName 不可靠 → 全项目统一走模块内实例注册表取层</div>
+        <span class="path">App.vue（new Scene）</span></div>
+      <div class="card c-uni" style="flex:1"><span class="act uni">通用</span><span class="nm">基础图层 initLayer</span>
+        <div class="ds">道路流线 LineLayer（动画）+ 3D 建筑 CityBuildingLayer —— 城市语境底图，入 baseLayerMap 注册表</div>
+        <span class="path">tools/initLayer.js</span></div>
+      <div class="card c-uni" style="flex:1"><span class="act uni">通用</span><span class="nm">地图控件 / 测量</span>
+        <div class="ds">缩放 / 全屏 / 主题控件 · l7-draw 四工具（调度页与测量共用）</div>
+        <span class="path">tools/initControl.js · MapDraw.vue</span></div>
+    </div>
+    <div class="grp">
+      <div class="gt">公交图层注册表 initBusLayers —— 首次显示才 addLayer，实例常驻复用，show/hide 同步 store.busOn 镜像</div>
+      <div class="row-in">
+        <div class="card c-core" style="flex:1.2"><span class="act core">核心</span><span class="nm">★ vehicleSim.js 车辆仿真引擎（系统心脏）</span>
+          <div class="ds"><b>发车时刻表</b>：50 线 × 每线 8~20 车，固定种子按线路长度 / 班型生成，首末班贴合真实；<b>1s ticker 沿线路 LineString 里程推进</b>（速度 = 设计时速 × 路况系数 × 临时事件，停站驻留 15~40s，首末站折返 / 回场）；<b>满载率</b>来自站点乘降模型；<b>ETA</b>：站间里程 × 当前速度 → 到站分钟外推</div>
+          <span class="path">tools/vehicleSim.js</span></div>
+        <div class="card c-core" style="flex:1"><span class="act core">核心</span><span class="nm">vehicles 车辆动态层</span>
+          <div class="ds">PointLayer 状态着色（运行绿 / 停站黄 / 回场灰 / 异常红）+ 车头朝向 + 选中<b>尾迹</b>；4Hz 节流 setData，不重建实例</div>
+          <span class="path">initBusLayers.js（vehicles 条目）</span></div>
+        <div class="card c-biz" style="flex:1"><span class="act biz">业务</span><span class="nm">busRoutes 线路层 ★</span>
+          <div class="ds">50 线按快 / 干 / 支分级色渲染 + 选中高亮 + 首末站端点强化；点击开线路详情抽屉</div>
+          <span class="path">initBusLayers.js（busRoutes）</span></div>
+        <div class="card c-biz" style="flex:1"><span class="act biz">业务</span><span class="nm">busStops 站点层 ★</span>
+          <div class="ds">225 站分普通 / 首末 / 枢纽三型图标；点击出<b>到站预报卡</b>（读 arrivals 倒计时）</div>
+          <span class="path">initBusLayers.js（busStops）</span></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">客流热力 / 专用道 / 场站图层</span>
+        <div class="ds">passengerHeat：站点乘降模型动态客流 Heatmap；busLane：主干道几何标注专用道；depot：首末站 / 停保场</div>
+        <span class="path">initBusLayers.js</span></div>
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">线路分级 routeClassLayers</span>
+        <div class="ds">按线路属性静态切分 快线 / 干线 / 支线 LineLayer；全部线网 = 复用主线路图层；状态同步 store.routeClass</div>
+        <span class="path">tools/routeClassLayers.js</span></div>
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">路况因子订阅</span>
+        <div class="ds">路段拥堵系数（22 条真实路名分级）喂给仿真引擎做减速因子，是晚点事件的第一归因</div>
+        <span class="path">tools/mockData.js（congestion）</span></div>
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">实例注册表 baseLayerMap / registry</span>
+        <div class="ds">App / 首页 / 实时栏 / 分级栏 / AI 执行器全部经注册表取层实例，杜绝重名重建与状态不同步</div>
+        <span class="path">tools/initLayer.js · initBusLayers.js</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 引擎每 tick 产出快照 → store（图表 / 实时栏 / AI / 播报共用同一数据源）▼</div>
+
+  <!-- ============ D AI 子系统 ============ -->
+  <div class="band" style="border-color: rgba(157,140,255,.35)">
+    <div class="btitle">
+      <span class="dot" style="color:var(--violet)"></span>
+      <span class="t1" style="color:var(--violet)">D · AI 出行助手子系统（自然语言「问车 / 叫车」）</span>
+      <span class="t2">在线大模型与离线规则双通道降级互补，执行路径唯一 —— 与手动操作同一条链路</span>
+      <span class="arch">src/components/AIAssistant.vue + src/tools/*</span>
+    </div>
+    <div class="row">
+      <div class="card c-biz" style="flex:1"><span class="nm">对话面板 AIAssistant.vue</span>
+        <div class="ds">悬浮按钮 + 消息流 + 快捷指令 chips：「2 路车到哪了」「35 路还有几分钟到淄博站」「显示客流热力」「打开车辆调度」「从人民公园怎么去海岱楼」；反问确认、忙碌态标识、历史截断回滚</div>
+        <span class="path">src/components/AIAssistant.vue</span></div>
+      <div class="card c-biz" style="flex:1"><span class="act biz">业务</span><span class="nm">在线通道 · DeepSeek 函数调用</span>
+        <div class="ds">Anthropic 兼容端点 tool_use 多轮（≤6 轮）循环；13 个公交语域工具：query_arrival · track_vehicle · query_line · set_bus_layer · set_route_class · fly_to · goto_page · area_search · change_style · map_measure · start_navigation · get_status</div>
+        <span class="path">api.deepseek.com/anthropic · .env</span></div>
+      <div class="card c-biz" style="flex:1"><span class="act biz">业务</span><span class="nm">离线通道 · 规则引擎 agent.js</span>
+        <div class="ds">关键词解析：数字 +「路/线」（2 路、35 路车）·「车到哪了」「几点来」「多久到」「满载」「空不空」「晚点」「换乘」；出行三分流（查看 / 去某地 / A→B）；Key 失效 / 断网自动降级</div>
+        <span class="path">src/tools/agent.js</span></div>
+      <div class="card c-core" style="flex:1.15"><span class="act core">核心</span><span class="nm">统一执行器 aiExec.js ★ 双通道汇合</span>
+        <div class="ds">LLM 工具与规则动作走同一实现：到站预报（读 arrivals + ETA）→ 站台卡展示；车辆追踪 → flyTo + 尾迹；线路详情 → 抽屉；图层 / 分级 / 页面跳转（带 query）与手动点击完全一致</div>
+        <span class="path">src/tools/aiExec.js</span></div>
+    </div>
+    <div class="row">
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">地名解析 places.js</span>
+        <div class="ds">多级命中：区县 / 枢纽 / 场站快表 → 站名索引（225 站）→ 道路名 → POI → 在线 geocode 兜底（3.5s）→ 候选建议；「2 路」线路号独立入口</div>
+        <span class="path">src/tools/places.js</span></div>
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">语音 speech.js</span>
+        <div class="ds">Web Speech API 中文队列：启动就绪 / 到站提示 / 晚点预警 / 运营异常实时播报（可开关）</div>
+        <span class="path">src/tools/speech.js</span></div>
+      <div class="card c-uni" style="flex:1.3"><span class="act uni">通用</span><span class="nm">机制层：反问确认 / 降级链 / 历史管理</span>
+        <div class="ds">猜不到意图 → 候选反问「你是不是想问…」；LLM 失败自动回滚历史并转规则引擎；对话上下文按整轮截断保续接</div>
+        <span class="path">AIAssistant.vue（逻辑层）</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 读取 store 快照与派生表 · 静态 GeoJSON 引用 ▼</div>
+
+  <!-- ============ E 数据层 ============ -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot" style="color:var(--teal)"></span>
+      <span class="t1" style="color:var(--teal)">E · 数据层</span>
+      <span class="t2">三层结构：真实开放数据（底座）→ 静态派生表（内存一次构建）→ 引擎实时快照（ticker）；不可公开数据一律固定种子可复现；用户账号数据存 MySQL（S 带）</span>
+      <span class="arch">src/assets/GIS_Data + src/tools/mockData.js + vehicleSim 派生</span>
+    </div>
+    <div class="row">
+      <div class="card c-core" style="flex:1.15"><span class="act core">核心</span><span class="nm">公交主数据（真实 · 高德采集）★</span>
+        <div class="ds">bus_routes 50 线（几何 + 起讫 + 途经站）· bus_stops 225 站 —— 模块加载派生：<b>站序表</b>（每线经站与里程）· <b>共站换乘图</b>（BFS）· <b>线路分级表</b>（快/干/支）</div>
+        <span class="path">assets/GIS_Data/bus_routes.json · bus_stops_amap.json</span></div>
+      <div class="card c-uni" style="flex:1"><span class="act uni">通用</span><span class="nm">城市底图数据（真实 · OSM）</span>
+        <div class="ds">Zibo_roads 路网（车辆行驶承载 + 路段拥堵系数）· Zibo_Buildings 建筑 · POI 五类 —— 仅作地图语境，非业务主体</div>
+        <span class="path">assets/GIS_Data/Zibo_roads.json 等</span></div>
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">仿真静态参数（固定种子）</span>
+        <div class="ds">发车时刻表 · 车辆档案（车牌/车型/司机）· 场站（真实首末站 + 停保场）· 专用道标注 · 站点乘降客流参数 · 运营异常剧本 —— 同种子同结果，可复现可测试</div>
+        <span class="path">tools/mockData.js（公交参数段）</span></div>
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">运行态实时数据（ticker）</span>
+        <div class="ds">每 tick 写入 store：车辆经纬度 / 状态 / 下一站 / ETA / 满载率 · 站台到站预报表 · 异常告警列表（联动 speech 播报）</div>
+        <span class="path">vehicleSim.js 快照输出</span></div>
+      <div class="card c-uni" style="flex:.9"><span class="act uni">通用</span><span class="nm">天气与密钥配置</span>
+        <div class="ds">fetchWeather（真实抓取，失败回退占位）· .env / .env.example（Key 不入库）· check-deps 预检</div>
+        <span class="path">tools/weather.js</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 浏览器直连 REST（CORS 开放接口）▼</div>
+
+  <!-- ============ F 外部服务 ============ -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot" style="color:var(--red)"></span>
+      <span class="t1" style="color:var(--red)">F · 外部开放服务</span>
+      <span class="t2">地图/地理类开放服务浏览器直连、不设代理（同源 /api 仅指向认证服务）；公交实时 GPS 无免费开放源 → 车辆数据以仿真引擎为演示模式，接口层预留替换位</span>
+      <span class="arch">浏览器直接调用</span>
+    </div>
+    <div class="row">
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">Mapbox</span><div class="ds">底图瓦片 + 10 风格 · Geocoding（地名/站名兜底）· Directions 驾车路线 · 汉化插件</div><span class="path">VITE_MAPBOX_TOKEN</span></div>
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">高德开放平台</span><div class="ds">geocode 地理编码（起终点/站吸附前置解析）· weather 实时天气 · 公交线路 / 站点 / 首末班采集脚本</div><span class="path">VITE_AMAP_KEY</span></div>
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">阿里 DataV</span><div class="ds">行政区划边界 JSON（区域搜索叠绘）</div><span class="path">geo.datav.aliyun.com</span></div>
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">DeepSeek</span><div class="ds">Anthropic 兼容端点：多轮对话 + 公交语域函数调用</div><span class="path">api.deepseek.com/anthropic</span></div>
+      <div class="card c-rsv"><span class="act rsv">预留</span><span class="nm">公交实时 GPS 适配层</span>
+        <div class="ds">vehicleSim 输出即「接口契约」：未来对接城市开放实时 API 只需写一个 adapter，渲染 / 图表 / 到站预报零改动</div>
+        <span class="path">adapter 接口（待接入）</span></div>
+    </div>
+  </div>
+
+  <div class="divider">▼ 开发与验证体系 ▼</div>
+
+  <!-- ============ G 工程 ============ -->
+  <div class="band">
+    <div class="btitle">
+      <span class="dot" style="color:#7fb2ff"></span>
+      <span class="t1" style="color:#7fb2ff">G · 工程与端到端验证</span>
+      <span class="t2">仿真引擎固定种子 → CDP 断言可给确定期望值，验证成本极低</span>
+      <span class="arch">scripts/</span>
+    </div>
+    <div class="row">
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">构建运行</span><div class="ds">Vite 4 dev/build/preview · pnpm · check-deps 预检（缺依赖/缺 Key 中文提示）</div><span class="path">package.json · scripts/check-deps.mjs</span></div>
+      <div class="card c-biz"><span class="act biz">业务</span><span class="nm">CDP 端到端验证</span><div class="ds">Edge 无头连 localhost:9222：断言车辆运行数、到站预报值、分级切换、AI 指令链路、<b>登录链路（未登录重定向 /login → 正确账号放行 / 错误密码拦截）</b>（DEV 调试桥 window.__bus / __routes / __sim / __ai）</div><span class="path">scripts/cdp-*.mjs</span></div>
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">MySQL 初始化与种子</span><div class="ds">schema.sql 一键建库建表（幂等）· seed 写入初始管理员 · check-deps 增加「DB 未连接」中文提醒</div><span class="path">scripts/schema.sql · scripts/seed-admin.mjs</span></div>
+      <div class="card c-core"><span class="act core">核心</span><span class="nm">仿真引擎断言</span><div class="ds">同一时间点两次启动车辆位置一致（种子复现）· ETA 单调递减 · 车辆不出线路几何范围 · 满载率 ∈ [0,1]</div><span class="path">scripts/sim-check.mjs</span></div>
+      <div class="card c-uni"><span class="act uni">通用</span><span class="nm">大屏截图</span><div class="ds">CDP 定宽截图产物供 README / 汇报使用</div><span class="path">scripts/shot-*.mjs</span></div>
+    </div>
+  </div>
+
+  <!-- ============ 模块总览表 ============ -->
+  <div class="band" style="margin-top:14px">
+    <div class="btitle">
+      <span class="dot" style="color:var(--green)"></span>
+      <span class="t1" style="color:var(--green)">功能模块总览（15 项 · 数据来源与实施批次）</span>
+      <span class="t2">批次对应底部里程碑 M1~M6</span>
+      <span class="arch">需求范围</span>
+    </div>
+    <table>
+      <tr><th>功能模块</th><th>职责</th><th>数据来源 / 依赖</th><th>实施批次</th></tr>
+      <tr><td class="mod">★ 用户登录与门禁</td><td class="why">登录页 + 路由守卫 + 401 统一拦截 · 会话（JWT 7 天）· 用户区 / 退出</td><td class="src">Express 认证服务（localhost:3001）</td><td class="cell-m">M0</td></tr>
+      <tr><td class="mod">SQL 账号库 users</td><td class="why">账号持久化 · bcrypt 加盐哈希存储 · 角色区分（admin / viewer）</td><td class="src">MySQL 8 · scripts/schema.sql + 种子管理员</td><td class="cell-m">M0</td></tr>
+      <tr><td class="mod">★ 车辆仿真引擎 vehicleSim</td><td class="why">时刻表生成 · 沿真实线路行驶 · 停站/折返 · 满载率 · ETA</td><td class="src">bus_routes 几何 + 种子参数 + 路况系数</td><td class="cell-m">M2</td></tr>
+      <tr><td class="mod">车辆实时位置层 vehicles</td><td class="why">动态点层 + 状态色 + 尾迹 · 点击车辆卡</td><td class="src">引擎快照 → store.busVehicles</td><td class="cell-m">M2</td></tr>
+      <tr><td class="mod">到站预报 arrivals</td><td class="why">站台各线下一班倒计时 · 站台卡展示</td><td class="src">ETA 引擎产物（每 tick 刷新）</td><td class="cell-m">M2</td></tr>
+      <tr><td class="mod">线路 / 站点主图层</td><td class="why">分级渲染 · 选中高亮 · 首末站特显 · 详情抽屉</td><td class="src">高德真实 GIS JSON + 派生站序表</td><td class="cell-m">M3</td></tr>
+      <tr><td class="mod">客流 / 专用道 / 场站图层</td><td class="why">客流热力 · 专用道 · 停保场要素层</td><td class="src">乘降模型 + 标注 / 真实首末站</td><td class="cell-m">M3</td></tr>
+      <tr><td class="mod">运营异常 OpsEvent</td><td class="why">晚点 / 故障 / 拥挤 / 绕行 列表 + 定位 + 拉框 + 播报</td><td class="src">引擎实况判定 + 异常剧本</td><td class="cell-m">M3</td></tr>
+      <tr><td class="mod">运营实时栏 / 线路分级栏</td><td class="why">要素开关 + 快/干/支分级切换（大屏常驻）</td><td class="src">store 镜像（busOn / routeClass）</td><td class="cell-m">M3</td></tr>
+      <tr><td class="mod">车辆调度页 + 线路详情抽屉</td><td class="why">车队监控 · 单线调度 · 站序与到站表</td><td class="src">store 快照 + 站序表</td><td class="cell-m">M4</td></tr>
+      <tr><td class="mod">换乘查询 Transfer</td><td class="why">直达 / 一次换乘方案 + 等车分钟</td><td class="src">共站换乘图（BFS）</td><td class="cell-m">M4</td></tr>
+      <tr><td class="mod">控制中心图表</td><td class="why">满载率 TOP10 · 客流时段 · 准点率 · 配车数</td><td class="src">Hooks 聚合 store 快照 → G2Plot</td><td class="cell-m">M4</td></tr>
+      <tr><td class="mod">AI 出行助手</td><td class="why">问车 / 到站查询 / 车辆追踪 / 图层与页面驱动 / 语音</td><td class="src">DeepSeek 在线 + 规则引擎离线降级</td><td class="cell-m">M5</td></tr>
+      <tr><td class="mod">通用 GIS 视图</td><td class="why">导航 / 区域搜索 / 测量 / 风格 / 旋转 / 城市视角</td><td class="src">Mapbox / 高德 / DataV</td><td class="cell-m">M6</td></tr>
+      <tr><td class="mod">真实 GPS 适配层</td><td class="why">对接城市开放实时公交 API（预留）</td><td class="src">第三方接口（未接入，契约已定）</td><td class="cell-m">预留</td></tr>
+    </table>
+    <div class="mapping-note">说明：引擎快照（busVehicles / arrivals / opsAlerts）是全系统唯一实时事实源 —— 图层、实时栏、图表、AI、播报都只订阅它，新增任何展示层都不需要改动引擎。</div>
+  </div>
+
+  <!-- ============ 链路 ============ -->
+  <div class="flow-wrap">
+    <div class="flow">
+      <div class="ft" style="color:var(--cyan)">◆ 链路 1 · 启动链路（引擎随地图就绪统一 boot）</div>
+      <div class="steps">
+        <div class="fstep"><span class="sno">① 入口</span>main.js → App.vue 建 mapboxgl.Map + L7 Scene（同画布）</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">② boot</span>style 加载后：initControl → initLayer → initBusLayers（注册全部图层条目）→ initRouteClassLayers</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">③ 引擎</span>vehicleSim.start()：种子生成时刻表 → 首班车布上线 → 挂 1s ticker</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">④ 挂载</span>sceneMap 赋值 → UI 注入生效 · 首页飞线网总览</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">⑤ 收尾</span>天气预取 + 「智慧公交系统已就绪，当前 N 辆车在线」播报</div>
+      </div>
+    </div>
+    <div class="flow">
+      <div class="ft" style="color:var(--green)">◆ 链路 2 · 车辆仿真数据链路（系统心跳，1s 循环）</div>
+      <div class="steps">
+        <div class="fstep"><span class="sno">① tick</span>每 1s 推进每辆车：站间里程 += 速度 ×（路况系数 × 事件系数）</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">② 状态机</span>运行 ↔ 停站（驻留 15~40s）→ 首末站折返 / 回场；满载率随乘降函数</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">③ 快照</span>写 store.busVehicles + 站台 arrivals（ETA 按当前速度外推）+ 异常 opsAlerts</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">④ 渲染</span>vehicles 层 setData（4Hz 节流）· 实时栏 / 图表随 store 响应式刷新</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">⑤ 告警</span>晚点 / 故障 / 拥挤入列 → speech 播报 + 调度页红点</div>
+      </div>
+    </div>
+    <div class="flow">
+      <div class="ft" style="color:var(--violet)">◆ 链路 3 · AI 指令链路（「问车 / 叫车」全流程）</div>
+      <div class="steps">
+        <div class="fstep"><span class="sno">① 提问</span>「35 路还有几分钟到淄博站？」</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">② 解析</span>DeepSeek query_arrival 工具调用，或离线规则命中「线路 + 站 + 时间词」</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">③ 查询</span>aiExec 读 store.arrivals：定位下一辆 35 路、按站距与 ETA 计算分钟数</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">④ 应答</span>中文回复 + 站台卡展示各方向倒计时 + 语音播报</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">⑤ 追问</span>「那辆车现在在哪」→ track_vehicle 地图聚焦 + 尾迹（多轮工具链）</div>
+      </div>
+    </div>
+    <div class="flow">
+      <div class="ft" style="color:#f472b6">◆ 链路 4 · 登录认证链路（M0 · 大屏的门禁）</div>
+      <div class="steps">
+        <div class="fstep"><span class="sno">① 访问</span>未登录打开任意地址 → 路由守卫校验失败 → 重定向 /login</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">② 提交</span>账号 + 密码 → POST /api/auth/login（Vite 同源代理 → auth-server:3001）</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">③ 校验</span>查 MySQL users → bcrypt.compare 比对哈希（10 轮加盐）</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">④ 放行</span>成功 → 签发 JWT 存前端 → 进入大屏；Header 显示当前用户</div>
+        <div class="farrow">→</div>
+        <div class="fstep"><span class="sno">⑤ 失守</span>密码错误中文提示 / 限速拦截 · 过期 401 → 清 token 回登录页 · 退出调 /logout</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 图例 ============ -->
+  <div class="legend">
+    <span class="lg"><span class="sw" style="background:var(--green)"></span><span class="act core">核心</span> 系统主干能力</span>
+    <span class="lg"><span class="sw" style="background:var(--amber)"></span><span class="act biz">业务</span> 公交业务模块</span>
+    <span class="lg"><span class="sw" style="background:var(--blue)"></span><span class="act uni">通用</span> 通用 GIS / 工程底座</span>
+    <span class="lg"><span class="sw" style="background:#c9a2ff"></span><span class="act rsv">预留</span> 未来扩展位</span>
+    <span class="lg" style="margin-left:auto">架构总原则：登录未过不放行 · 引擎只产快照不碰 UI · 图层只认注册表 · UI 只读 store · 密码只存 bcrypt 哈希（明文永不落库）</span>
+  </div>
+  <div class="foot-note">
+    实施里程碑：M0 登录认证与账号库（登录页 / 路由守卫 / MySQL users 表 · bcrypt）→ M1 数据底座（站序表 / 共站图 / 时刻表生成器）→ M2 仿真引擎 + 车辆层 + 到站预报跑通 → M3 图层体系与运营 UI（线路 / 站点 / 客流 / 专用道 / 场站 / 实时栏 / 分级栏 / 异常）→ M4 业务页面（调度 / 换乘 / 详情抽屉 / 控制中心）→ M5 AI 助手与语音 → M6 通用视图与工程验证收尾
+  </div>
+</div>
+</body>
+</html>

@@ -3,34 +3,44 @@
   <Header></Header>
   <RoadClassBar v-if="loadMap"></RoadClassBar>
   <RealtimeBar v-if="loadMap"></RealtimeBar>
+  <VehiclePanel v-if="loadMap"></VehiclePanel>
   <BottomTools v-if="loadMap"></BottomTools>
   <!-- AI 助手：右下角悬浮按钮 + 对话框（全局浮层，跨路由可用） -->
   <AIAssistant v-if="loadMap"></AIAssistant>
   <RouterView></RouterView>
   <!-- 控制中心浮层：全局开关（再点控制中心才关闭），路由切换不消失 -->
   <G2Charts v-if="store.chartsOpen"></G2Charts>
+  <!-- 数据管理面板：底部「数据管理」开关，增删改查 SQL Server 业务表 -->
+  <DataManage v-if="store.dataPanelOpen"></DataManage>
 </template>
 <script setup>
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { onMounted, provide, reactive, ref } from "vue";
+import { useRouter } from 'vue-router';
 import { Scene } from "@antv/l7";
 import { Mapbox } from "@antv/l7-maps";
 import { RouterView } from 'vue-router'
 import initControl from './tools/initControl'
 import initLayer from './tools/initLayer'
-import { initTrafficLayers } from './tools/initTrafficLayers'
+import { initTrafficLayers, refreshVisibleTrafficLayers } from './tools/initTrafficLayers'
 import { initRoadClassLayers } from './tools/roadClassLayers'
+import { initVehicleSim } from './tools/vehicleSim'
 import Header from './components/Header.vue'
 import RoadClassBar from './components/RoadClassBar.vue'
 import RealtimeBar from './components/RealtimeBar.vue'
+import VehiclePanel from './components/VehiclePanel.vue'
 import BottomTools from './components/BottomTools.vue'
 import AIAssistant from './components/AIAssistant.vue'
 import G2Charts from './views/G2Charts.vue'
+import DataManage from './components/DataManage.vue'
 import { store, injectStore } from './store'
+import { api as dbApi } from './api'
 import { fetchWeather } from './tools/weather'
 import { speak } from './tools/speech'
+import { ElMessage } from 'element-plus'
 const loadMap = ref(false);
+const router = useRouter();
 
 // 坑1修复：setup 同步 provide 响应式容器（Vue3 子组件 onMounted 先于父组件执行，
 // 子组件在 mounted 里 inject 的是容器引用，等 initMap 完成后赋值即拿到实例）
@@ -92,6 +102,7 @@ const initMap = () => {
     initLayer(scene)
     initTrafficLayers(scene)
     initRoadClassLayers(scene)
+    initVehicleSim(scene, map) // 动态车辆模拟：自驱 tick（未开图层也累计统计），开图层才建 marker
     loadMap.value = true
     // 响应式容器赋值（子组件 mounted 时注入的引用同步生效）
     sceneMap.scene = scene
@@ -106,12 +117,37 @@ const initMap = () => {
   else map.once('load', boot)
 };
 
+// 启动时拉取 SQL Server 业务数据（后端未启动/库未入库都不阻塞地图：
+// 图层/图表在 DB 就绪前回退本地同源兜底数据，拉取成功后重建刷新）
+const loadDbData = async () => {
+  store.dbStatus = 'loading'
+  try {
+    const data = await dbApi.fetchMapData()
+    for (const t of Object.keys(store.dbData)) {
+      if (Array.isArray(data[t])) store.dbData[t] = data[t]
+    }
+    store.dbStatus = 'ok'
+    // 拉取时若某些图层已开启，用库中数据重建
+    refreshVisibleTrafficLayers()
+  } catch (e) {
+    store.dbStatus = 'fail'
+    store.dbError = e.message || '后端数据服务不可用'
+    console.warn('[db] 后端未连接，使用本地演示数据：', store.dbError)
+    ElMessage.warning('未连接数据库服务（' + store.dbError + '）：已使用内置演示数据，可在底部「数据管理」查看/重试')
+  }
+}
+
 onMounted(async () => {
+  // 登录页阶段不播开场语音（初始导航可能尚未 resolve，先等路由就绪再判路径）
+  await router.isReady()
+  const isLogin = router.currentRoute.value.path === '/login'
   initMap();
+  // SQL Server 业务数据全量拉取（不阻塞地图加载，失败自动回退演示数据）
+  loadDbData();
   // 天气（真实抓取，失败自动回退占位数据）
   store.weather = await fetchWeather()
-  // 开场播报
-  speak('淄博智慧交通管理系统已就绪，实时监控全市道路运行状态')
+  // 开场播报（登录成功后的欢迎语音在 Login.vue 里播，此处仅进入主页后播）
+  if (!isLogin) speak('淄博智慧交通管理系统已就绪，实时监控全市道路运行状态')
 });
 </script>
 <style>
@@ -153,5 +189,25 @@ onMounted(async () => {
   position: fixed;
   top: 10%;
   left: 1%;
+}
+
+/* ===== 动态车辆 marker（vehicleSim 生成的 DOM） =====
+ * 外层 transform 由 mapbox 定位接管（inline），样式里不能动；旋转只作用于内层 .vm-inner */
+.vehicle-marker {
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.vehicle-marker .vm-inner {
+  display: block;
+  transform-origin: center center;
+  filter: drop-shadow(0 0 4px rgba(0, 180, 255, 0.55));
+  transition: filter 0.3s;
+}
+
+/* 红灯等待中的车辆泛红光 */
+.vehicle-marker.vm-waiting .vm-inner {
+  filter: drop-shadow(0 0 6px rgba(255, 70, 70, 0.9));
 }
 </style>
