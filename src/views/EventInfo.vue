@@ -174,7 +174,8 @@
     draw && draw.destroy();
     if (pointLayer) {
       scene.removeLayer(pointLayer);
-   
+      pointLayer = null;
+    }
   });
   
   const tableClick = (e) => {
