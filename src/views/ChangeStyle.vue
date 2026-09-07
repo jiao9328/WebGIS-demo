@@ -101,4 +101,4 @@ const setMapStyle = (style) => {
     background: #3074a4;
 }
 
-  
+  </style>

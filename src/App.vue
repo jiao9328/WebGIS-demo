@@ -3,6 +3,7 @@
   <Header></Header>
   <RoadClassBar v-if="loadMap"></RoadClassBar>
   <RealtimeBar v-if="loadMap"></RealtimeBar>
+  <VehiclePanel v-if="loadMap"></VehiclePanel>
   <BottomTools v-if="loadMap"></BottomTools>
   <!-- AI 助手：右下角悬浮按钮 + 对话框（全局浮层，跨路由可用） -->
   <AIAssistant v-if="loadMap"></AIAssistant>
@@ -24,9 +25,11 @@ import initControl from './tools/initControl'
 import initLayer from './tools/initLayer'
 import { initTrafficLayers, refreshVisibleTrafficLayers } from './tools/initTrafficLayers'
 import { initRoadClassLayers } from './tools/roadClassLayers'
+import { initVehicleSim } from './tools/vehicleSim'
 import Header from './components/Header.vue'
 import RoadClassBar from './components/RoadClassBar.vue'
 import RealtimeBar from './components/RealtimeBar.vue'
+import VehiclePanel from './components/VehiclePanel.vue'
 import BottomTools from './components/BottomTools.vue'
 import AIAssistant from './components/AIAssistant.vue'
 import G2Charts from './views/G2Charts.vue'
@@ -99,6 +102,7 @@ const initMap = () => {
     initLayer(scene)
     initTrafficLayers(scene)
     initRoadClassLayers(scene)
+    initVehicleSim(scene, map) // 动态车辆模拟：自驱 tick（未开图层也累计统计），开图层才建 marker
     loadMap.value = true
     // 响应式容器赋值（子组件 mounted 时注入的引用同步生效）
     sceneMap.scene = scene
@@ -185,5 +189,25 @@ onMounted(async () => {
   position: fixed;
   top: 10%;
   left: 1%;
+}
+
+/* ===== 动态车辆 marker（vehicleSim 生成的 DOM） =====
+ * 外层 transform 由 mapbox 定位接管（inline），样式里不能动；旋转只作用于内层 .vm-inner */
+.vehicle-marker {
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.vehicle-marker .vm-inner {
+  display: block;
+  transform-origin: center center;
+  filter: drop-shadow(0 0 4px rgba(0, 180, 255, 0.55));
+  transition: filter 0.3s;
+}
+
+/* 红灯等待中的车辆泛红光 */
+.vehicle-marker.vm-waiting .vm-inner {
+  filter: drop-shadow(0 0 6px rgba(255, 70, 70, 0.9));
 }
 </style>
