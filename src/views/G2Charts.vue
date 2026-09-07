@@ -178,7 +178,7 @@ const stat = computed(() => {
   z-index: 1;
 }
 
-/* 统计卡说明小字 */
+
 .item-sub {
   margin-top: 6px;
   font-size: 11px;
