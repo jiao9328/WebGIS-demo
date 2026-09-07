@@ -7,13 +7,13 @@
       </div>
       <div class="g2-chart g2-chart-left">
         <div class="people-sum">淄博各区县拥堵路段流量排行</div>
-        <BarChart v-bind="bus_config" :data="bus_data" />
+        <BarChart v-bind="busChart.bus_config" :data="busChart.bus_data" />
       </div>
     </div>
     <div class="g2-right">
       <div class="g2-chart" style="height: 35%">
         <div class="people-sum">近期警情类型分布</div>
-        <PieChart v-bind="people_config" />
+        <PieChart v-bind="peopleChart.people_config" />
       </div>
       <div class="g2-chart" style="height: 12%">
         <div class="people-sum">道路感知设备</div>
@@ -45,29 +45,46 @@
   </div>
 </template>
 <script setup>
+import { computed } from 'vue'
 import { ColumnChart, BarChart, PieChart } from "@opd/g2plot-vue";
 /* 出行人口 */
 import { useLeftTop } from "@/Hooks/useLeftTop";
 import { useLeftBottom } from "@/Hooks/useLeftBottom";
 import { useRightTop } from "@/Hooks/useRightTop";
-import { cameras, trafficLights, police } from '@/tools/mockData'
+import { store } from '../store'
+/* DB 未就绪时的兜底源：mock 单例与入库数据同种子同口径；JSON 为公交真实数据 */
+import { cameras as mockCameras, trafficLights as mockLights, police as mockPolice } from '@/tools/mockData'
 import busRoutes from '@/assets/GIS_Data/bus_routes.json'
 import busStops from '@/assets/GIS_Data/bus_stops_amap.json'
-const { config, data } = useLeftTop();
-const { bus_config, bus_data } = useLeftBottom();
-const { people_config } = useRightTop();
 
-// 交通设施统计（真实数据计算）
-const stat = {
-  cameraTotal: cameras.length,
-  cameraFault: cameras.filter((c) => c.status === 'fault').length,
-  lightTotal: trafficLights.length,
-  lightFault: trafficLights.filter((l) => l.state === 'fault').length,
-  policeTotal: police.length,
-  policeOnDuty: police.filter((p) => p.onDuty).length,
-  busRoutes: busRoutes.features.length,
-  busStops: busStops.features.length
-}
+// DB 就绪（后端可达且已拉取）→ 读 SQL Server；否则回退本地兜底源
+const rowsOf = (name) => (store.dbStatus === 'ok' ? store.dbData[name] : undefined)
+
+/* 车辆密度柱状图：派生计算值（人口比例），非 DB 表，保持静态 */
+const { config, data } = useLeftTop();
+
+/* 拥堵流量条形图 / 警情饼图：读 DB congestion / alerts，随增删改响应式刷新 */
+const busChart = computed(() => useLeftBottom(rowsOf('congestion')));
+const peopleChart = computed(() => useRightTop(rowsOf('alerts')));
+
+// 交通设施统计卡（DB 行实时统计；故障数/在勤数按各自状态列）
+const stat = computed(() => {
+  const cam = rowsOf('cameras') || mockCameras
+  const light = rowsOf('traffic_lights') || mockLights
+  const pol = rowsOf('police') || mockPolice
+  const routes = rowsOf('bus_routes') || busRoutes.features
+  const stops = rowsOf('bus_stops') || busStops.features
+  return {
+    cameraTotal: cam.length,
+    cameraFault: cam.filter((c) => c.status === 'fault').length,
+    lightTotal: light.length,
+    lightFault: light.filter((l) => l.state === 'fault').length,
+    policeTotal: pol.length,
+    policeOnDuty: pol.filter((p) => p.onDuty === true || p.on_duty === true).length,
+    busRoutes: routes.length,
+    busStops: stops.length
+  }
+})
 </script>
 <style>
 .g2-left,

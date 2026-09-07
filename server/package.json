@@ -1,0 +1,7 @@
+{
+  "name": "zibo-traffic-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "ZiboSmartTraffic 数据服务端（Express + mssql），由 pnpm server 启动，配置见 .env"
+}

@@ -6,6 +6,8 @@
 ![Mapbox GL](https://img.shields.io/badge/Mapbox_GL-2.14-000000?style=flat-square)
 ![G2Plot](https://img.shields.io/badge/G2Plot-2.4-FF6B35?style=flat-square)
 ![DeepSeek](https://img.shields.io/badge/AI-DeepSeek-4D6BFE?style=flat-square)
+![SQL Server](https://img.shields.io/badge/SQL_Server-2022-CC2927?style=flat-square)
+![Express](https://img.shields.io/badge/Express-5-000000?style=flat-square)
 
 ## 📝 项目简介
 
@@ -26,6 +28,7 @@
     * **实时监控总览 (`Home.vue` + 底部工具条)**：监控探头 / 信号灯 / 警员 / 公交线路 / 道路拥堵 / 交通热力 / 公交站点 7 类要素开关式叠加，点击要素弹出详情气泡。
     * **控制中心 (`G2Charts.vue`)**：结合 G2Plot 三图（各区县车辆密度 / 拥堵路段流量排行 / 警情类型分布）+ 设施统计卡（探头 / 信号灯 / 警员 / 公交）。
     * **实时数据栏与道路分级栏 (`RealtimeBar.vue` / `RoadClassBar.vue`)**：左上角实时交通指数栏，顶部道路等级分层配色条。
+    * **业务数据入库 + 数据管理 (`DataManage.vue` + `server/`)**：10 类业务数据入库本机 SQL Server，底部「数据管理」面板分表浏览 / 新增 / 编辑 / 删除（坐标地图点选、公交线路地图画线），保存即写库并实时重建地图图层。
 * 🛠️ **专业地图分析工具**
     * **空间测量 (`MapDraw.vue`)**：多边形 / 矩形 / 圆形 / 线绘制，面积与距离实时测量。
     * **事件信息 (`EventInfo.vue`)**：交通警情事件分页列表，点击自动定位到事发位置。
@@ -52,12 +55,19 @@
 * **OSM**：真实路网、建筑几何与信号灯点位（Overpass 抓取）
 * **DeepSeek**：AI 助手对话（Anthropic 协议端点，多轮工具调用 + thinking 过滤）
 
+### 数据服务端（可选，业务数据入库后开启）
+* **Express 5 + mssql（`server/index.js`，端口 3001）**：REST `/api` 增删改查，表名/列名白名单 + 全参数化查询防注入；生产模式同源托管 `dist/`
+* **SQL Server 2022（本机 `ZiboSmartTraffic` 库）**：10 张业务表；建库建表脚本 `db/setup.sql`、业务数据脚本 `db/seed.sql`（SSMS 执行），账号 `zibo_app`（口令存 `server/.env`，不入版本库）
+* **前端接入**：启动时 `GET /api/mapdata` 全量拉取 → `store.dbData` 响应式缓存 → 图层工厂 / 控制中心图表 / 事件检索统一消费；后端不可达时自动回退本地同源演示数据
+
 ## 📁 核心目录结构
 
 ```text
 Zibo-SmartTransportation-WebGIS/
 ├── public/                     # 静态资源与调试页
 ├── scripts/                    # 数据抓取与 CDP 端到端验证脚本
+├── db/                         # 数据库脚本：setup.sql 建库建表 / seed.sql 业务数据（SSMS 执行）
+├── server/                     # Express 数据服务端（REST /api 增删改查，读 SQL Server）
 ├── screenshots/                # README 系统截图（真实运行捕获）
 ├── src/                        # 前端源码
 │   ├── assets/
@@ -90,44 +100,94 @@ Zibo-SmartTransportation-WebGIS/
 
 ## 🚀 部署与运行指南
 
-### 1. 前置环境要求
-* Node.js（建议 v16+）
-* pnpm（推荐，`npm install -g pnpm` 安装）
+> **常见报错自检**：若直接 `pnpm dev` / `npm run dev` 报 `'vite' 不是内部或外部命令`，
+> 说明**还没安装依赖**（仓库刻意不含 node_modules），回到下面第 1 步执行 `pnpm install` 即可。
+> 项目已内置预检脚本（`scripts/check-deps.mjs`），漏装依赖或漏配 Key 时会给出中文提示，不再报看不懂的错。
 
-### 2. 克隆项目并配置 API Key
+### 0. 前置环境要求
+* Node.js 16+（建议 18/20，[nodejs.org](https://nodejs.org/) 下载）
+* pnpm（推荐，`npm install -g pnpm` 安装）—— 用 npm 亦可
 
-密钥**不入版本库**（`.env` 已被 .gitignore 排除，GitHub 推送保护也会自动拦截含密钥的提交），请自行申请后在本机配置：
+### 1. 克隆项目并安装依赖（首次必做！）
 
 ```bash
 git clone https://github.com/jiao9328/WebGIS-demo.git
 cd WebGIS-demo
+pnpm install      # 或 npm install；安装后 node_modules 才会出现
 ```
 
-在项目根目录创建 `.env` 文件，填入自己的密钥：
+### 2. 配置 API Key（Mapbox 必填，否则地图白屏）
+
+密钥**不入版本库**（`.env` 已被 .gitignore 排除，GitHub 推送保护也会自动拦截含密钥的提交），仓库提供 `env.example` 模板，复制后填入自己的 Key：
+
+```bash
+# Windows CMD:   copy .env.example .env
+cp .env.example .env
+```
+
+再编辑 `.env`（各 Key 的申请地址见文件内注释）：
 
 ```dotenv
-# Mapbox（地图底图，必填）→ https://account.mapbox.com/ 新建默认 token（pk. 开头）
-VITE_MAPBOX_TOKEN=pk.your_mapbox_access_token
-
-# 高德（区域搜索/天气/地名解析，必填）→ https://console.amap.com/ 新建「Web 服务」类型 Key
-VITE_AMAP_KEY=your_amap_web_service_key
-
-# DeepSeek（AI 助手，选填）→ https://platform.deepseek.com/ ；缺省时 AI 助手自动降级为离线规则引擎
-VITE_DEEPSEEK_KEY=sk-your_deepseek_api_key
-
-# DeepSeek 模型名（选填，默认 deepseek-v4-pro）
-VITE_DEEPSEEK_MODEL=deepseek-v4-pro
+VITE_MAPBOX_TOKEN=pk.your_mapbox_access_token   # Mapbox（地图底图，必填）→ https://account.mapbox.com/
+VITE_AMAP_KEY=your_amap_web_service_key         # 高德（区域搜索/天气/地名解析，必填）→ https://console.amap.com/
+VITE_DEEPSEEK_KEY=sk-your_deepseek_api_key      # DeepSeek（AI 助手，选填）→ https://platform.deepseek.com/
+VITE_DEEPSEEK_MODEL=deepseek-v4-pro             # 模型名（选填）
 ```
+
+> 申请好 Key 之前也可先跑起来看 UI —— DeepSeek 缺失会自动降级为离线指令模式，
+> 高德缺失仅影响区域搜索 / 天气 / 地名解析，只有 Mapbox 缺失会白屏。
 
 ### 3. 运行项目
 
 ```bash
-pnpm install      # 安装依赖
 pnpm dev          # 启动开发服务器 → http://localhost:5173
 pnpm build        # 生产构建 → dist/
+pnpm preview      # 本地预览构建产物
 ```
 
 浏览器打开 http://localhost:5173 ，听到「淄博智慧交通管理系统已就绪」语音播报即启动成功。
+
+### 4. 🔐 登录系统（账号密码入库 SQL Server）
+
+系统有登录门槛：未登录访问任何页面都会跳转到登录页，输入正确账号密码后才能进入。
+账号存本机 SQL Server 的 `dbo.users` 表（密码为 **scrypt 加盐哈希，明文绝不入库**），由后端 `/api/auth/login` 校验。
+
+* **默认账号**：`admin` / `123456`。后端（`pnpm server`）首次启动会自动把默认管理员写入 `dbo.users`（账号已存在则跳过，不覆盖）。
+* **自定义账号/口令**：在 `server/.env` 加 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 后重启后端（仅对「还不存在」的用户生效；改已有账号口令需在 SSMS 里删除该行或手动 `UPDATE password_hash/salt` 后重启）。
+* **建表**：`dbo.users` 由 `db/setup.sql` 创建（重跑脚本会重建该表，旧账号随之清空——重启一次 `pnpm server` 即自动重建默认管理员）。
+* 登录页右上角 Header 显示当前用户与「退出登录」按钮。
+* 注：校验为**前端路由拦截**（演示/课程级别），`/api` 数据接口本身保持开放，请勿用于生产级鉴权场景。
+
+### 5.（可选）业务数据入库 SQL Server —— 让「数据管理」面板真正读写数据库
+
+页面默认使用内置演示数据即可跑通全部功能（与入库数据同种子、同口径）。
+如需把业务数据存进本机 SQL Server 并支持页面增删改查，按下面步骤操作（约 5 分钟）：
+
+**前置**：本机已装 SQL Server（2019/2022/Express 均可，默认实例 `localhost`）。
+
+**① 建库建表 + 建专用账号**：用 SSMS 以 Windows 认证连上 `localhost`，打开 `db/setup.sql` 执行
+（自动创建 `ZiboSmartTraffic` 库、登录 `zibo_app`（口令 `Zibo2026@Traffic`，已按最小权限做库内 db_owner）、10 张业务表与登录账号表 `users`；脚本幂等可反复执行）。
+
+**② 灌入业务数据**：SSMS 打开 `db/seed.sql` 执行（文件已 `USE ZiboSmartTraffic`，全 TRUNCATE + 批量 INSERT，幂等可重跑）。入库规模：摄像头 220 · 信号灯 231 · 警员 60 · 警情 28 · 事件 44 · 拥堵 22 · 热力点 336 · 公交线路 50 · 公交站 225 · 区县 8 = 1224 行。
+
+> 想改数据库账号/口令：改 `db/setup.sql` 里 `CREATE LOGIN` 一行后重跑 ①，并保持 `server/.env` 中 `DB_USER` / `DB_PASSWORD` 与其一致（`.env` 不入版本库）。
+> 若改了内置演示数据想重新生成灌库脚本：`pnpm db:seed`（重新输出 `db/seed.sql`）。
+
+**③ 双终端启动**：
+
+```bash
+pnpm server    # 终端 1：数据服务端 → http://localhost:3001（健康检查 GET /api/health）
+pnpm dev       # 终端 2：前端 → http://localhost:5173
+```
+
+开发模式下 `/api` 由 Vite 代理到 3001（见 `vite.config.js`；端口在 `server/.env` 的 `PORT` 改，两处需一致）；`pnpm build` 后用 `pnpm server` 单独启动即可同源托管前端 + 数据接口（部署形态）。
+
+**④ 在页面里增删改查**：点底部工具条「🗄️ 数据管理」打开面板 —— 表签切到「监控探头 / 信号灯 / 警员 / 实时警情 / 事件记录 / 拥堵路段 / 公交线路 / 公交站点」，即可分表浏览、新增、编辑、删除：
+* 新增/编辑坐标可手动输入，也可点「🎯 地图点选」在地图上取点回填；
+* 公交线路的走向用「✏️ 在地图画线」沿道路手绘（左键逐点、双击/右键结束），几何以 GeoJSON 入库；
+* 每次保存 = 写库 → 重取该表 → 重建对应地图图层：新点位立即出现在地图上，控制中心统计与图表同步更新；
+* 「热力点」表为只读展示数据，后端对只读表的新增/删除一律拒绝（403）；
+* 数据库未连接 / 未建库时面板顶部给出中文原因与「重连」按钮，全站自动回退演示数据，不影响浏览。
 
 ## 📷 系统截图
 

@@ -18,9 +18,11 @@
   import { PointLayer } from "@antv/l7";
   import { onMounted, inject, reactive, onUnmounted } from "vue";
   import { DrawRect, DrawEvent } from "@antv/l7-draw";
-  import EeventData from "../assets/GIS_Data/Zibo_events.json";
   import * as turf from "@turf/turf";
   import { ElMessage } from "element-plus";
+  // 事件数据改读 SQL Server（store.dbData.events），增删改后与数据管理面板共享同一来源
+  import { pointFC } from "../tools/dbAdapter";
+  import { store } from "../store";
   let map, scene, pointLayer, draw;
   const data = reactive({
     tableData: [],
@@ -58,8 +60,14 @@
   };
   
   const toSearch = (e) => {
+    const evRows = (store.dbData && store.dbData.events) || [];
+    if (!evRows.length) {
+      ElMessage.warning("数据库暂无事件记录：请先启动数据服务（pnpm server）并执行 db/seed.sql 入库");
+      return;
+    }
     let arr = [];
-    EeventData.features.forEach((item) => {
+    // DB 行 → 事件 FeatureCollection（列名已按图层口径适配）
+    pointFC("events", evRows).features.forEach((item) => {
       if (turf.booleanPointInPolygon(item, e)) {
         arr.push(item);
         item.properties.xy = item.geometry.coordinates;

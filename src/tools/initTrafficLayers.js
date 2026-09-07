@@ -2,67 +2,53 @@
  * 智慧交通图层模块（L7）
  *
  * 7 类交通图层懒创建注册表：首次显示才 scene.addLayer，之后 show/hide 复用实例。
- *   camera       监控探头（220，status 着色：正常 #00e5ff / 故障 #ff3b30）
- *   trafficLight 信号灯（231，state 四色 green/red/yellow/fault）
- *   police       警员分布（60，#3d7bff）
- *   busRoute     公交线路（50 条真实线路，LineLayer 按线路 color，无动画）
- *   congestion   道路拥堵（22 条真实路名，按路网几何匹配，三色分级）
- *   heat         交通热力（336 点，HeatmapLayer 绿→黄→橙→红）
- *   busStop      公交站点（225，真实高德点位）
- * building/mainRoad 为桥接别名：控制参考程序基础图层（城市建筑/道路流线）
+ *   camera       监控探头（status 着色：正常 #00e5ff / 故障 #ff3b30）
+ *   trafficLight 信号灯（state 四色 green/red/yellow/fault）
+ *   police       警员分布（#3d7bff，onDuty 在勤/休班）
+ *   busRoute     公交线路（LineLayer 按线路 color，无动画）
+ *   congestion   道路拥堵（真实路名 → 本地路网几何匹配，三色分级）
+ *   heat         交通热力（HeatmapLayer 绿→黄→橙→红）
+ *   busStop      公交站点
+ * building/mainRoad 为桥接别名：控制基础图层（城市建筑/道路流线）
+ *
+ * 数据源：SQL Server（后端 /api/mapdata → store.dbData），不再是本地 JSON/mock。
+ * 图层工厂在「创建/重建」瞬间从 store.dbData 读最新行并经 dbAdapter 转 GeoJSON，
+ * 因此数据管理面板增删改后调用 refreshTrafficLayer(name) 重建即可实时上图层。
  *
  * 导出：
  *   setTrafficLayerVisible(name, visible) / toggleTrafficLayer(name) / isTrafficLayerVisible(name)
+ *   refreshTrafficLayer(name) / refreshVisibleTrafficLayers()
  *   DEV 下挂 window.__traffic 供 CDP 验证断言
  */
 import { PointLayer, LineLayer, HeatmapLayer, Popup } from '@antv/l7'
-import { cameras, trafficLights, police, congestion, heatPoints } from './mockData'
-import busRoutes from '@/assets/GIS_Data/bus_routes.json'
-import busStops from '@/assets/GIS_Data/bus_stops_amap.json'
 import roadData from '@/assets/GIS_Data/Zibo_roads.json'
 import { baseLayerMap } from './initLayer'
 import { store } from '../store'
+import { pointFC, routeFC, layerProps } from './dbAdapter'
 
-/* ---------------- 数据预处理（模块加载时一次） ---------------- */
-// 数组 {lng,lat,...} → GeoJSON FeatureCollection
-const toFC = (arr) => ({
-  type: 'FeatureCollection',
-  features: arr.map((p) => ({
-    type: 'Feature',
-    properties: p,
-    geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
-  }))
-})
-
-// 拥堵：按真实路名匹配 OSM 路网几何（一次建索引，O(1) 查询）
+/* ---------------- 本地路网索引（仅供拥堵按路名匹配几何，模块加载时一次） ---------------- */
 const roadByName = new Map()
 for (const f of roadData.features) {
   const name = f.properties.name
   if (name && !roadByName.has(name)) roadByName.set(name, f)
 }
-const congestionFC = {
+
+/* 当前行的简写（图层创建瞬间读取最新 DB 数据） */
+const rows = (t) => (store.dbData && store.dbData[t]) || []
+
+/* 拥堵层 FC：行 + 路网几何匹配（找不到的退化为短线段占位） */
+const congestionFC = () => ({
   type: 'FeatureCollection',
-  features: congestion.map((c) => {
+  features: rows('congestion').map((c) => {
     const rf = roadByName.get(c.name)
     return {
       type: 'Feature',
-      properties: { name: c.name, level: c.level, levelName: c.levelName, avgSpeed: c.avgSpeed, flow: c.flow },
-      geometry: rf ? rf.geometry : { type: 'LineString', coordinates: [[c.lng, c.lat], [c.lng + 0.01, c.lat + 0.005]] }
+      properties: layerProps('congestion', c),
+      geometry: rf ? rf.geometry
+        : { type: 'LineString', coordinates: [[c.lng, c.lat], [c.lng + 0.01, c.lat + 0.005]] }
     }
   })
-}
-
-const cameraFC = toFC(cameras)
-const lightFC = toFC(trafficLights)
-const policeFC = toFC(police)
-const heatFC = {
-  type: 'FeatureCollection',
-  features: heatPoints.map((p) => ({
-    type: 'Feature',
-    properties: { value: p.value },
-    geometry: { type: 'Point', coordinates: [p.lng, p.lat] }
-  }))
-}
+})
 
 /* ---------------- 共享 Popup ---------------- */
 const popup = new Popup({ closeButton: true, offsets: [0, -10] })
@@ -87,7 +73,7 @@ const ensure = (name) => {
 const layerFactories = {
   camera() {
     const layer = new PointLayer({ id: '交通-监控', zIndex: 10 })
-    layer.source(cameraFC)
+    layer.source(pointFC('cameras', rows('cameras')))
       .shape('circle')
       .size(4)
       .color('status', ['#00e5ff', '#ff3b30'])
@@ -107,7 +93,7 @@ const layerFactories = {
   },
   trafficLight() {
     const layer = new PointLayer({ id: '交通-信号灯', zIndex: 10 })
-    layer.source(lightFC)
+    layer.source(pointFC('traffic_lights', rows('traffic_lights')))
       .shape('circle')
       .size(4)
       .color('state', ['#22c55e', '#ff3b30', '#ffd60a', '#8e8e93'])
@@ -126,7 +112,7 @@ const layerFactories = {
   },
   police() {
     const layer = new PointLayer({ id: '交通-警员', zIndex: 10 })
-    layer.source(policeFC)
+    layer.source(pointFC('police', rows('police')))
       .shape('circle')
       .size(4)
       .color('#3d7bff')
@@ -145,7 +131,7 @@ const layerFactories = {
   },
   busRoute() {
     const layer = new LineLayer({ id: '交通-公交线路', zIndex: 5 })
-    layer.source(busRoutes)
+    layer.source(routeFC(rows('bus_routes')))
       .size(2)
       .shape('line')
       .color('color', (c) => c) // 线路自身颜色
@@ -162,7 +148,7 @@ const layerFactories = {
   },
   congestion() {
     const layer = new LineLayer({ id: '交通-拥堵', zIndex: 6 })
-    layer.source(congestionFC)
+    layer.source(congestionFC())
       .size(4)
       .shape('line')
       .color('level', ['#ff3b30', '#ff9500', '#ffd60a']) // 0严重/1中度/2轻度
@@ -180,7 +166,7 @@ const layerFactories = {
   },
   heat() {
     const layer = new HeatmapLayer({ id: '交通-热力', zIndex: 2 })
-    layer.source(heatFC)
+    layer.source(pointFC('heat_points', rows('heat_points')))
       .shape('heatmap')
       .size('value', [0, 1])
       .style({
@@ -196,14 +182,13 @@ const layerFactories = {
   },
   busStop() {
     const layer = new PointLayer({ id: '交通-公交站', zIndex: 9 })
-    layer.source(busStops)
+    layer.source(pointFC('bus_stops', rows('bus_stops')))
       .shape('circle')
       .size(5)
       .color('#00c2ff')
       .active({ color: '#fff' })
     layer.on('click', (e) => {
       const p = e.feature.properties
-      // 站点数据无 lng/lat 属性，用事件坐标
       showPopup(evLngLat(e), `
         <div style="min-width:140px">
           <b>🚏 ${p.name}</b><br/>
@@ -214,7 +199,7 @@ const layerFactories = {
   }
 }
 
-// 桥接：building/mainRoad 别名映射到参考程序基础图层（城市建筑 / 道路流线）
+// 桥接：building/mainRoad 别名映射到基础图层（城市建筑 / 道路流线）
 const BRIDGE_NAMES = { building: '淄博市', mainRoad: '淄博道路' }
 
 /** 初始化（App.vue 地图就绪后调用一次，只保存 scene 引用，不建任何图层） */
@@ -227,6 +212,7 @@ export function initTrafficLayers(scene) {
       setVisible: (n, v) => setTrafficLayerVisible(n, v),
       toggle: (n) => toggleTrafficLayer(n),
       visible: (n) => isTrafficLayerVisible(n),
+      refresh: (n) => refreshTrafficLayer(n),
       registry
     }
   }
@@ -256,7 +242,7 @@ export function setTrafficLayerVisible(name, visible) {
     item.layer.hide()
   }
   item.visible = visible
-  // 同步到 store.trafficOn 镜像（实时数据栏点亮态 + AI 助手状态查询共用同一来源）
+  // 同步到 store.trafficOn 镜像（实时数据栏 UI 与 AI 助手状态查询共用同一来源）
   if (store && store.trafficOn) store.trafficOn[name] = visible
   return true
 }
@@ -274,4 +260,28 @@ export const isTrafficLayerVisible = (name) => {
     return !!baseLayerMap[BRIDGE_NAMES[name]]?.isVisible()
   }
   return !!ensure(name).visible
+}
+
+/**
+ * 数据变更后重建图层（数据管理增删改 → store.dbData 已更新 → 调本函数）：
+ * 销毁旧实例并从 store.dbData 重读数据建新实例；当前不可见只清缓存，下次显示自然拿到新数据。
+ * @returns {boolean} 是否真的发生了重建
+ */
+export function refreshTrafficLayer(name) {
+  if (BRIDGE_NAMES[name] || !layerFactories[name] || !sceneRef) return false
+  const item = ensure(name)
+  if (item.layer) {
+    try { sceneRef.removeLayer(item.layer) } catch (e) { /* 图层可能已不在 scene */ }
+    item.layer = null
+  }
+  if (item.visible) {
+    item.layer = layerFactories[name]()
+    sceneRef.addLayer(item.layer)
+  }
+  return true
+}
+
+/** 全部已显示图层重建（App 拉取 DB 全量成功后调用） */
+export function refreshVisibleTrafficLayers() {
+  for (const name of Object.keys(layerFactories)) refreshTrafficLayer(name)
 }
