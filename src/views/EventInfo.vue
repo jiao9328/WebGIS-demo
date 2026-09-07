@@ -285,5 +285,3 @@
   
   :deep(.el-table__inner-wrapper::before) {
     height: 0;
-  }
-  </style>
