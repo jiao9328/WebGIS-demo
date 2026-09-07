@@ -271,7 +271,7 @@ const mapTo = (center, level) => {
     } else if (level === '市') {
         zoomIndex = 7
     }
-    map.flyTo({ //飞行到某个点，带飞行动画
+    
         center: center,
         zoom: zoomIndex,
         speed: 0.8,
