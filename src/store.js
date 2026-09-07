@@ -4,31 +4,34 @@
  */
 import { reactive } from 'vue'
 
-/* ================= 登录态（localStorage 持久化，只存用户名/显示名，绝不存密码） ================= */
+/* ================= 登录态（sessionStorage 会话级，只存用户名/显示名，绝不存密码） =================
+ * 会话级存储：同一标签页刷新保持登录；关闭浏览器/新开窗口需重新登录 ——
+ * 演示/汇报时每次打开都能先看到登录页。旧版 localStorage 的残留 key 不再读取。 */
 const AUTH_KEY = 'zb_auth_user'
 
-/** 同步读取当前登录用户（守卫/Header 用）；localStorage 损坏时容错返回 null */
+/** 同步读取当前登录用户（守卫/Header 用）；存储损坏时容错返回 null */
 export function getAuthUser() {
   try {
-    const raw = localStorage.getItem(AUTH_KEY)
+    const raw = sessionStorage.getItem(AUTH_KEY)
     return raw ? JSON.parse(raw) : null
   } catch (e) {
     return null
   }
 }
-/** 登录成功：写响应式 store + localStorage */
+/** 登录成功：写响应式 store + sessionStorage（顺手清掉旧版 localStorage 残留） */
 export function setAuthUser(user) {
   store.user = user
-  localStorage.setItem(AUTH_KEY, JSON.stringify(user))
+  sessionStorage.setItem(AUTH_KEY, JSON.stringify(user))
+  localStorage.removeItem(AUTH_KEY)
 }
-/** 退出登录：清 store + localStorage */
+/** 退出登录：清 store + sessionStorage */
 export function clearAuthUser() {
   store.user = null
-  localStorage.removeItem(AUTH_KEY)
+  sessionStorage.removeItem(AUTH_KEY)
 }
 
 export const store = reactive({
-  /* ---- 当前登录用户（{ username, display_name } | null），刷新后从 localStorage 恢复 ---- */
+  /* ---- 当前登录用户（{ username, display_name } | null），刷新（同标签页）从 sessionStorage 恢复 ---- */
   user: getAuthUser(),
 
   /* ---- 控制中心浮层（底部按钮开关，点其它按钮不关闭） ---- */
