@@ -11,11 +11,11 @@
       </div>
     </div>
     <div class="g2-right">
-      <div class="g2-chart" style="height: 35%">
+      <div class="g2-chart" style="height: 26%">
         <div class="people-sum">近期警情类型分布</div>
         <PieChart v-bind="peopleChart.people_config" />
       </div>
-      <div class="g2-chart" style="height: 12%">
+      <div class="g2-chart" style="height: 10%">
         <div class="people-sum">道路感知设备</div>
         <div class="hospital">
           <div class="item">
@@ -28,7 +28,7 @@
           </div>
         </div>
       </div>
-      <div class="g2-chart" style="height: 12%">
+      <div class="g2-chart" style="height: 10%">
         <div class="people-sum">警力与公交运力</div>
         <div class="hospital">
           <div class="item">
@@ -41,12 +41,25 @@
           </div>
         </div>
       </div>
+      <!-- 动态车辆·信号灯联动：读 vehicleSim 统计镜像 + 近 60s 均速折线 -->
+      <div class="g2-chart vp-block" style="height: 28%">
+        <div class="people-sum">动态车辆·信号灯联动</div>
+        <div class="hosp4">
+          <div class="it"><b class="ok">{{ vs.running }}</b><span>行驶中</span></div>
+          <div class="it"><b class="warn">{{ vs.waiting }}</b><span>红灯等待</span></div>
+          <div class="it"><b class="warn">{{ vs.onCongested }}</b><span>拥堵缓行</span></div>
+          <div class="it"><b class="cy">{{ vs.avgSpeed }}</b><span>均速km/h</span></div>
+        </div>
+        <div class="vp-line">
+          <LineChart v-bind="lineChart" />
+        </div>
+      </div>
     </div>
   </div>
 </template>
 <script setup>
 import { computed } from 'vue'
-import { ColumnChart, BarChart, PieChart } from "@opd/g2plot-vue";
+import { ColumnChart, BarChart, PieChart, LineChart } from "@opd/g2plot-vue";
 /* 出行人口 */
 import { useLeftTop } from "@/Hooks/useLeftTop";
 import { useLeftBottom } from "@/Hooks/useLeftBottom";
@@ -85,6 +98,21 @@ const stat = computed(() => {
     busStops: stops.length
   }
 })
+
+// 动态车辆联动块：vehicleSim 每秒写入的统计镜像 + 近 60s 均速（秒级刷新）
+const vs = computed(() => store.vehicleStats)
+const lineChart = computed(() => ({
+  height: 92,
+  xField: 't',
+  yField: 'speed',
+  smooth: true,
+  color: '#7dd3ff',
+  lineStyle: { lineWidth: 2 },
+  xAxis: { label: { style: { fill: '#bfd9ff', fontSize: 10 } }, tickCount: 6 },
+  yAxis: { label: { style: { fill: '#bfd9ff', fontSize: 10 } }, min: 0 },
+  // 依赖 history.length 触发每秒重算（push/shift 原地变更不会自动触发）
+  data: (store.vehicleStats.history.length, store.vehicleStats.history.slice())
+}))
 </script>
 <style>
 .g2-left,
@@ -183,5 +211,46 @@ const stat = computed(() => {
   margin-top: 6px;
   font-size: 11px;
   color: rgba(200, 220, 255, 0.75);
+}
+
+/* ===== 动态车辆·信号灯联动块 ===== */
+.vp-block {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4 项速览：行驶中 / 红灯等待 / 拥堵缓行 / 均速（title 为 absolute，正常文档流即可） */
+.hosp4 {
+  display: flex;
+  justify-content: space-around;
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.hosp4 .it {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.hosp4 .it b {
+  font-size: 17px;
+  font-weight: bold;
+  text-shadow: 0 0 10px rgba(125, 211, 255, 0.55);
+}
+
+.hosp4 .it b.ok { color: #22c55e; }
+.hosp4 .it b.warn { color: #ff6b6b; text-shadow: 0 0 10px rgba(255, 107, 107, 0.6); }
+.hosp4 .it b.cy { color: #7dd3ff; }
+
+.hosp4 .it span {
+  font-size: 10px;
+  color: rgba(180, 205, 240, 0.8);
+}
+
+/* 近 60s 均速折线（autoFit 容器） */
+.vp-line {
+  flex: 1;
+  min-height: 0;
 }
 </style>

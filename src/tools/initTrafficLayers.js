@@ -25,6 +25,7 @@ import roadData from '@/assets/GIS_Data/Zibo_roads.json'
 import { baseLayerMap } from './initLayer'
 import { store } from '../store'
 import { pointFC, routeFC, layerProps } from './dbAdapter'
+import { setVehicleVisible } from './vehicleSim' // 动态车辆为前端模拟层（marker），开关委托它统一管理
 
 /* ---------------- 本地路网索引（仅供拥堵按路名匹配几何，模块加载时一次） ---------------- */
 const roadByName = new Map()
@@ -220,6 +221,11 @@ export function initTrafficLayers(scene) {
 
 /** 显示/隐藏交通图层（懒创建：首次显示时才 addLayer） */
 export function setTrafficLayerVisible(name, visible) {
+  if (name === 'vehicle') {
+    // 动态车辆：DOM marker 由模拟器统一管理（store 镜像也只在 vehicleSim 内写入，避免双写漂移）
+    setVehicleVisible(visible)
+    return true
+  }
   if (BRIDGE_NAMES[name]) {
     // 桥接基础图层（按实例注册表取，scene.getLayerByName 在 L7 2.15 不可用）
     const base = baseLayerMap[BRIDGE_NAMES[name]]
@@ -250,7 +256,9 @@ export function setTrafficLayerVisible(name, visible) {
 export const toggleTrafficLayer = (name) => {
   const cur = BRIDGE_NAMES[name]
     ? !!baseLayerMap[BRIDGE_NAMES[name]]?.isVisible()
-    : ensure(name).visible
+    : name === 'vehicle'
+      ? !!store.trafficOn.vehicle
+      : ensure(name).visible
   setTrafficLayerVisible(name, !cur)
   return !cur
 }
@@ -259,6 +267,7 @@ export const isTrafficLayerVisible = (name) => {
   if (BRIDGE_NAMES[name]) {
     return !!baseLayerMap[BRIDGE_NAMES[name]]?.isVisible()
   }
+  if (name === 'vehicle') return !!store.trafficOn.vehicle
   return !!ensure(name).visible
 }
 

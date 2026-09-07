@@ -58,7 +58,7 @@ export const store = reactive({
   /* ---- 道路分级栏当前选中（null=总道路） ---- */
   roadClass: null, // highway | first | second | third
 
-  /* ---- 7 类交通图层开态镜像（实时数据栏 UI 与 AI 助手共用） ---- */
+  /* ---- 8 类交通图层开态镜像（实时数据栏 UI 与 AI 助手共用；vehicle 为前端模拟层） ---- */
   trafficOn: {
     camera: false,
     trafficLight: false,
@@ -66,7 +66,18 @@ export const store = reactive({
     congestion: false,
     heat: false,
     busRoute: false,
-    busStop: false
+    busStop: false,
+    vehicle: false
+  },
+
+  /* ---- 动态车辆模拟统计（vehicleSim 每秒 tick 更新；history 为近 60 秒均速，供折线图） ---- */
+  vehicleStats: {
+    total: 0,        // 模拟车辆总数
+    running: 0,      // 行驶中
+    waiting: 0,      // 红灯/黄灯等待中
+    onCongested: 0,  // 处于拥堵路段（被降速）
+    avgSpeed: 0,     // 全车队平均速度 km/h
+    history: []      // [{ t: 'HH:MM:SS', speed: number }...] 最近 60 秒
   },
 
   /* ---- 天气（App 挂载时真实抓取） ---- */

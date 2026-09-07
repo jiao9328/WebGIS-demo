@@ -124,6 +124,7 @@ function guessActions(text) {
     [/热力|热度|人流|热区/, 'heat'],
     [/公交|巴士|线路/, 'busRoute'],
     [/站牌|站点/, 'busStop'],
+    [/动态车辆|车辆|车流|汽车|行驶的?车|移动的车/, 'vehicle'],
     [/建筑|楼宇/, 'building'],
     [/道路|路网/, 'mainRoad']
   ]
@@ -228,7 +229,7 @@ const TOOLS = [
   { name: 'map_action', description: '控制地图视角动作', input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['zoom_in', 'zoom_out', 'reset_view', 'rotate_view', 'top_view', 'tilt_view'], description: 'zoom_in=放大 zoom_out=缩小 reset_view=复位淄博全景 rotate_view=环绕旋转 top_view=俯视 tilt_view=斜视' } }, required: ['action'] } },
   { name: 'fly_to', description: '地图飞到某个地点并自动缩放到能看清该地的级别（适合查看：区县/道路/地标/POI/学校等任意地名，会多级解析+在线兜底，未命中返回候选名）。注意：仅当用户说「飞到X/飞往X/定位X/去X看看」这种查看意图才用；用户说「想去X/怎么去X/从A到B」是想走路线，必须用 start_navigation，不要用本工具', input_schema: { type: 'object', properties: { place: { type: 'string', description: '地点中文名：区县、道路名、POI 名或任意地名' } }, required: ['place'] } },
   { name: 'set_road_class', description: '切换道路分级显示：total=总道路（全路网）、highway=高速公路、first=一级道路、second=二级道路、third=三级道路', input_schema: { type: 'object', properties: { level: { type: 'string', enum: ['total', 'highway', 'first', 'second', 'third'] } }, required: ['level'] } },
-  { name: 'set_traffic_layer', description: '开关交通图层', input_schema: { type: 'object', properties: { layer: { type: 'string', enum: ['camera', 'trafficLight', 'police', 'congestion', 'heat', 'busRoute', 'busStop', 'mainRoad', 'building'], description: 'camera=监控探头 trafficLight=信号灯 police=警员分布 congestion=道路拥堵 heat=热力图 busRoute=公交线路 busStop=公交站点 mainRoad=道路 building=城市建筑' }, on: { type: 'boolean', description: 'true=打开 false=关闭' } }, required: ['layer', 'on'] } },
+  { name: 'set_traffic_layer', description: '开关交通图层', input_schema: { type: 'object', properties: { layer: { type: 'string', enum: ['camera', 'trafficLight', 'police', 'congestion', 'heat', 'busRoute', 'busStop', 'vehicle', 'mainRoad', 'building'], description: 'camera=监控探头 trafficLight=信号灯 police=警员分布 congestion=道路拥堵 heat=热力图 busRoute=公交线路 busStop=公交站点 vehicle=动态车辆(模拟) mainRoad=道路 building=城市建筑' }, on: { type: 'boolean', description: 'true=打开 false=关闭' } }, required: ['layer', 'on'] } },
   { name: 'set_control_center', description: '开关控制中心（统计图表浮层）', input_schema: { type: 'object', properties: { open: { type: 'boolean' } }, required: ['open'] } },
   { name: 'goto_page', description: '跳转系统功能页', input_schema: { type: 'object', properties: { page: { type: 'string', enum: ['home', 'rotation', 'cityview', 'eventinfo', 'areasearch', 'navigation', 'changestyle'] } }, required: ['page'] } },
   { name: 'area_search', description: '区域搜索：搜索某个城市/行政区的边界轮廓并展示（相当于进入区域搜索页直接搜索）。keyword 传中文地区名，如 淄博市、山东省、济南市', input_schema: { type: 'object', properties: { keyword: { type: 'string', description: '地区中文名，至少要市级' } }, required: ['keyword'] } },
