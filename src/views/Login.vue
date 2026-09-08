@@ -196,11 +196,5 @@ const onLogin = async () => {
   text-align: center;
   color: rgba(125, 211, 255, 0.65);
 }
-.login-copy {
-  margin: 10px 0 0;
-  font-size: 11px;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.3);
-  letter-spacing: 1px;
-}
+
 </style>
