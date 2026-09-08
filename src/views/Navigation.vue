@@ -114,3 +114,8 @@ onUnmounted(() => {
     if (directionControl && map) {
         map.removeControl(directionControl)
         map.off('load', tryPlan)
+    }
+})
+</script>
+<style>
+</style>
