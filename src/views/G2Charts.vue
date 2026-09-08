@@ -239,7 +239,9 @@ const lineChart = computed(() => ({
   text-shadow: 0 0 10px rgba(125, 211, 255, 0.55);
 }
 
-
+.hosp4 .it b.ok { color: #22c55e; }
+.hosp4 .it b.warn { color: #ff6b6b; text-shadow: 0 0 10px rgba(255, 107, 107, 0.6); }
+.hosp4 .it b.cy { color: #7dd3ff; }
 
 .hosp4 .it span {
   font-size: 10px;
