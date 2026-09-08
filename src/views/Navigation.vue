@@ -107,7 +107,13 @@ onMounted(() => {
     pollTimer = setInterval(() => { ensureCtrl(); tryPlan() }, 300)
 })
 // 同路由下 query 变化（AI 换起终点）再规划一次
+watch(() => [route.query.from, route.query.to], () => { if (mapSettled()) plan() })
 
+onUnmounted(() => {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+    if (directionControl && map) {
+        map.removeControl(directionControl)
+        map.off('load', tryPlan)
     }
 })
 </script>
