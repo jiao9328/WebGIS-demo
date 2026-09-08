@@ -31,6 +31,7 @@ onMounted(() => {
   }
   // 容器已就绪直接飞，否则等 reactive 赋值
   if (!go()) {
+    const stop = watch(sm, () => {
       if (go()) stop()
     })
   }
