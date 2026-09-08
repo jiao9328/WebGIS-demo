@@ -83,7 +83,21 @@ const tryPlan = () => {
 }
 
 onMounted(() => {
-   
+    map = inject("$scene_map").map
+    // 控件必须在 style 加载完成后才实例化：插件靠一次性 load 事件建数据源，
+    // 若在 style 加载中（或换风格后 load 已发过）挂载，source 永不创建、路线永远画不出来
+    const ensureCtrl = () => {
+        if (directionControl || !styleLoaded()) return
+        directionControl = new MapboxDirections({
+            accessToken: import.meta.env.VITE_MAPBOX_TOKEN,
+            // 导航指令用中文；geocoder 命名空间会原样拼进地理编码请求参数，
+            // 让起终点解析结果显示中文地名（否则默认英文 "Boshan Qu, Zibo Shi, ..."）
+            language: 'zh-Hans',
+            unit: 'metric',
+            geocoder: {
+                language: 'zh-Hans',
+                country: 'cn',
+                proximity: [118.05, 36.81]
             }
         })
         map.addControl(directionControl)
