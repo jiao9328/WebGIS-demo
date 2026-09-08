@@ -248,7 +248,7 @@ const lineChart = computed(() => ({
   color: rgba(180, 205, 240, 0.8);
 }
 
-
+/* 近 60s 均速折线（autoFit 容器） */
 .vp-line {
   flex: 1;
   min-height: 0;
