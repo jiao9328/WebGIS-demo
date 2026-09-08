@@ -6,11 +6,7 @@ import { DrawPolygon, DrawRect, DrawCircle, DrawLine } from "@antv/l7-draw";
 let map, scene, type, draw;
 onMounted(() => {
   // 获取地图变量
-  map = inject("$scene_map").map;
-  scene = inject("$scene_map").scene;
-  const route = useRoute();
-  type = route.params.type;
-  initDraw();
+  
 });
 
 onBeforeRouteUpdate((to) => {
