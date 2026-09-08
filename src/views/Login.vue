@@ -41,8 +41,7 @@
         >登 录</el-button>
       </el-form>
 
-      <p v-if="isDev" class="login-hint">默认账号 admin / 123456（可修改 server/.env 的 ADMIN_PASSWORD）</p>
-      <p class="login-copy">数据服务登录 · 账号由 SQL Server 校验</p>
+      <p class="login-copy">本地账号校验 · 不连接数据库</p>
     </div>
   </div>
 </template>
@@ -56,9 +55,6 @@ import { speak } from '../tools/speech'
 
 const route = useRoute()
 const router = useRouter()
-
-// 开发环境才在页脚提示默认账号（生产构建不显示）
-const isDev = import.meta.env.DEV
 
 const username = ref('')
 const password = ref('')
@@ -190,11 +186,11 @@ const onLogin = async () => {
   text-align: left;
 }
 
-.login-hint {
-  margin: 22px 0 0;
-  font-size: 12px;
+.login-copy {
+  margin: 10px 0 0;
+  font-size: 11px;
   text-align: center;
-  color: rgba(125, 211, 255, 0.65);
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 1px;
 }
-
 </style>
