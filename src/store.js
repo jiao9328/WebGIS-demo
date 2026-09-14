@@ -73,6 +73,13 @@ export const store = reactive({
     vehicle: false
   },
 
+  /* ---- 动态车辆「列表 ↔ 地图」联动的唯一状态源（vehicleSim 写入，VehiclePanel 读取） ----
+   * selectedVehicleId：点击后选中的车辆 id（0..14），null = 未选中；地图 marker 常驻高亮 + 光环
+   * hoveredVehicleId ：鼠标悬停的车辆 id，null = 无；列表行与 marker 双向临时高亮
+   * 两侧都不直接改对方 DOM，一律写这里再由 watch 反向驱动，保证单向数据流。 */
+  selectedVehicleId: null,
+  hoveredVehicleId: null,
+
   /* ---- 动态车辆模拟统计（vehicleSim 每秒 tick 更新；history 为近 60 秒均速，供折线图） ---- */
   vehicleStats: {
     total: 0,        // 模拟车辆总数
