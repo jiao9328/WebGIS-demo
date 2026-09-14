@@ -87,6 +87,18 @@
         </button>
         <p>切换风格</p>
       </div>
+      <!-- 交通大屏：全屏浮层开关（点其它按钮不关闭，再点本按钮才关闭）。
+           ★ 必须追加在 .btn-groups 末尾：cdp-click-test / cdp-fuzz 里有按序号硬编码的按钮表，
+           插在中间会让它们全部错位。
+           图标用 icon-gaikuang（屏幕里一条折线图），语义就是"可视化大屏"。原先用的
+           icon-tubiaozhizuomobanzhuanqu-02 虽字形存在，但放大复核（scripts/cdp-icon-grid.mjs）
+           发现它画的是**购物车** —— 字形存在 ≠ 语义正确。 -->
+      <div class="item" :class="{ on: store.screenOpen }" @click="store.screenOpen = !store.screenOpen">
+        <button class="toggle-btn">
+          <i class="iconfont icon-gaikuang"></i>
+        </button>
+        <p>交通大屏</p>
+      </div>
     </div>
   </div>
 </template>

@@ -40,6 +40,9 @@ export const store = reactive({
   /* ---- 数据管理面板（底部「数据管理」按钮开关，浮层不随路由消失） ---- */
   dataPanelOpen: false,
 
+  /* ---- 交通可视化大屏（底部「交通大屏」按钮开关；全屏浮层，路由切换不消失） ---- */
+  screenOpen: false,
+
   /* ---- SQL Server 业务数据（后端 /api/mapdata 全量拉取后填充） ----
    * dbStatus: idle(未拉取) | loading | ok | fail(含 dbError 原因)
    * dbData：表名 → 行数组，图层工厂 / 控制中心 / 事件检索实时读取 */

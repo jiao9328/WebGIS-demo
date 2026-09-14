@@ -229,7 +229,7 @@ ws.onopen = async () => {
   /* ===================== E 底部工具条 ===================== */
   console.log('\n===== E 底部工具条 =====')
   const items = await evj(`JSON.stringify([...document.querySelectorAll('.btn-groups .item')].map(e=>e.textContent.trim()))`)
-  check((items || []).length === 10, '底部共 10 个入口', items)
+  check((items || []).length === 11, '底部共 11 个入口', items)
   // 图标是否真的有字形（iconfont 类名写错时 ::before 是空的，肉眼看不见但 DOM 看不出来）
   const iconless = await evj(`JSON.stringify([...document.querySelectorAll('.btn-groups .item')].map(e=>{
     const i = e.querySelector('i.iconfont'); if(!i) return null

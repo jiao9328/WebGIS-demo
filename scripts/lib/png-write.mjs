@@ -83,6 +83,26 @@ export function cropZoom(img, cx, cy, size, factor) {
   return out
 }
 
+/**
+ * 整数倍缩小（每 factor×factor 方块取左上角那个像素）。
+ * 用途：几张 1440×900 的整页截图要一眼同看时，先缩再拼，否则识图模型看的是四张各自的大图。
+ * 最近邻取样会丢细线（小字会糊），只看「页面是什么状态」够用，不要用它看图标细节。
+ */
+export function downscale(img, factor) {
+  const width = Math.max(1, Math.floor(img.width / factor))
+  const height = Math.max(1, Math.floor(img.height / factor))
+  const rgba = new Uint8Array(width * height * 4)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const s = (y * factor * img.width + x * factor) * 4
+      const d = (y * width + x) * 4
+      rgba[d] = img.rgba[s]; rgba[d + 1] = img.rgba[s + 1]
+      rgba[d + 2] = img.rgba[s + 2]; rgba[d + 3] = 255
+    }
+  }
+  return { width, height, rgba }
+}
+
 /** 把若干张同尺寸小块横向/纵向拼成一张对照图，块与块之间留 borderWidth 像素白缝 */
 export function montage(tiles, cols, borderWidth = 6) {
   const tw = tiles[0].width, th = tiles[0].height

@@ -285,8 +285,18 @@ const addMask = (text) => {
 }
 
 const getBound = (postcode) => {
-    fetch('https://geo.datav.aliyun.com/areas_v3/bound/' + postcode + '_full.json')
-        .then(res => res.json())
+    /* DataV 只给「有下级」的行政区出 _full.json：省 → 下辖各市、市 → 下辖各区县。
+     * 区县是叶子节点（childrenNum:0），请求 _full 会 404，而且返回体是 XML 错误页 ——
+     * 直接 res.json() 会抛 SyntaxError:'Unexpected token <'，被 promise 吞掉，
+     * 结果就是「搜区县不画边界」。所以 _full 不通就退回 {adcode}.json，那是该区县
+     * 自身的边界，FeatureCollection 结构与 _full 一致，下面 addLayer 不用改。 */
+    const base = 'https://geo.datav.aliyun.com/areas_v3/bound/'
+    const load = (u) => fetch(u).then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status) // 别把 XML 错误页喂给 res.json()
+        return res.json()
+    })
+    load(base + postcode + '_full.json')
+        .catch(() => load(base + postcode + '.json'))
         .then(res => {
             // console.log(`output->res`, res)
             if (layerId && map.getLayer(layerId)) {
@@ -309,14 +319,19 @@ const getBound = (postcode) => {
             layerId = id
             // console.log(oldLayer.id);
         })
+        .catch(e => console.warn('[bound] 行政边界获取失败：', e.message))
 }
 
 const mapTo = (center, level) => {
-    let zoomIndex = 2
+    let zoomIndex = 2 // 兜底（兴趣点等）：保持原行为
     if (level === '省') {
         zoomIndex = 5.5
     } else if (level === '市') {
         zoomIndex = 7
+    } else if (level === '区县') {
+        // 少了这一档：区县会掉进 2 级兜底（一屏整个中国），边界多边形只有几个像素，
+        // 看起来就是「搜了没反应」。11 级下区县轮廓约占屏 1/4~1/3，四周还留着城市上下文。
+        zoomIndex = 11
     }
     map.flyTo({ //飞行到某个点，带飞行动画
         center: center,

@@ -22,15 +22,17 @@ export function useMapReady() {
 
   const isReady = () => !!(sm && sm.map)
 
+  const run = (cb) => {
+    try {
+      cb(sm.map, sm.scene)
+    } catch (e) {
+      console.error('[useMapReady] 就绪回调执行失败：', e)
+    }
+  }
+
   const flush = () => {
     const cbs = pending.splice(0)
-    for (const cb of cbs) {
-      try {
-        cb(sm.map, sm.scene)
-      } catch (e) {
-        console.error('[useMapReady] 就绪回调执行失败：', e)
-      }
-    }
+    for (const cb of cbs) run(cb)
     if (stopWatch) {
       stopWatch()
       stopWatch = null
@@ -44,11 +46,13 @@ export function useMapReady() {
    */
   const onReady = (cb) => {
     if (isReady()) {
-      try {
-        cb(sm.map, sm.scene)
-      } catch (e) {
-        console.error('[useMapReady] 就绪回调执行失败：', e)
-      }
+      /* 已就绪也必须异步回调。调用方一律把 onReady 写在 setup 中段，而回调里要用的
+       * searchCity / applyStyleFromQuery 这类函数是 setup 后段的 const —— 同步回调会撞上
+       * TDZ（ReferenceError: Cannot access 'x' before initialization），还会被下面的 catch
+       * 吞成一行 console.error。表现极具迷惑性：整页刷新（地图未就绪 → 走 watch 那条异步
+       * 路径）一切正常，SPA 跳进来（地图已就绪）却静默什么都不发生 —— 区域搜索的
+       * ?area= / 换风格的 ?style= 都是这么失效的。微任务与 flush() 那条路径时机一致。 */
+      Promise.resolve().then(() => run(cb))
       return () => {}
     }
     pending.push(cb)

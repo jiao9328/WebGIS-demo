@@ -12,6 +12,8 @@
   <G2Charts v-if="store.chartsOpen"></G2Charts>
   <!-- 数据管理面板：底部「数据管理」开关，增删改查 SQL Server 业务表 -->
   <DataManage v-if="store.dataPanelOpen"></DataManage>
+  <!-- 交通可视化大屏：底部「交通大屏」开关，把库表数据与实时车辆数据汇总联动（全屏浮层） -->
+  <TrafficScreen v-if="store.screenOpen" />
 </template>
 <script setup>
 import mapboxgl from "mapbox-gl";
@@ -34,6 +36,7 @@ import BottomTools from './components/BottomTools.vue'
 import AIAssistant from './components/AIAssistant.vue'
 import G2Charts from './views/G2Charts.vue'
 import DataManage from './components/DataManage.vue'
+import TrafficScreen from './views/TrafficScreen.vue'
 import { store, injectStore } from './store'
 import { api as dbApi } from './api'
 import { fetchWeather } from './tools/weather'
@@ -114,6 +117,9 @@ const initMap = () => {
       // 调试桥仅开发环境暴露（供 CDP 验证脚本断言）
       window.__scene = scene
       window.__map = map
+      // 路由实例：截图/验证脚本要用 router.push 走 SPA 跳转，不能整页刷新
+      // （整页刷新每次新建一个 mapbox 地图 = 一个 WebGL 上下文，跳七八次就耗尽，地图再也起不来）
+      window.__router = router
     }
   }
   if (map.loaded()) boot()
