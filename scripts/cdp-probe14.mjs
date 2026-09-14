@@ -147,7 +147,12 @@ ws.onopen = async () => {
       return o.field}
     // shape 走同一条 configService 通路，但 layer.shapeOption 读起来更直接
     const shape=(l.shapeOption&&l.shapeOption.field)||val('shape')
-    return JSON.stringify({shape, size:val('size'), color:val('color'),
+    /* ★ 点位层的 size 现在是「按 point_count 取值」的回调（.size('point_count', n => n>1?0:尺寸)），
+     *   不能再读 .field（那是 'point_count'）。喂两个样本：1 = 散点（真画出来的那个值）、
+     *   2 = 聚合桶（必须是 0 —— 桶上不画图标，这就是互斥显示的另一半）。 */
+    const sz=a.size
+    const sizeP=(sz&&typeof sz.values==='function')?{field:sz.field,散点:sz.values(1),桶:sz.values(2)}:null
+    return JSON.stringify({shape, size:val('size'), sizeP, color:val('color'),
       stroke:(l.rawConfig||{}).stroke, strokeWidth:(l.rawConfig||{}).strokeWidth,
       n:(l.layerSource&&l.layerSource.originData&&l.layerSource.originData.features||[]).length})})()`
 
@@ -168,9 +173,36 @@ ws.onopen = async () => {
     if (n !== 'busRoute') {
       const mt = await ev(`(()=>{try{return String(window.__traffic.registry[${JSON.stringify(n)}].layer.getModelType())}catch(e){return 'err:'+e.message}})()`)
       check(mt === 'image', `${n} 渲染模型 = image（图标真的被当成图片画，不是退化文字）`, mt)
+      /* ★ 上面那条只能证明「按当前数据算出来应该是 image」，证明不了「**绑定**的就是图片模型」：
+       *   getModelType() 是每次现算的，而模型实例是建层那一刻按当时的数据定的。实测踩过这个坑 ——
+       *   在默认视图（散点 0 个）建层时 getModelType() 返回 'normal'，绑定的就是普通方块模型，
+       *   而之后放大到 15 再问 getModelType() 它会回答 'image'，方块却已经绑死了（一直画方块）。
+       * 所以必须读**绑定的那个模型实例**（layer.models[0]）本身。
+       *
+       * ★★ 读法：不能读类名。这个打包（vite 预打包）把重名类都加了数字尾巴 —— 实测
+       *   PointLayer2 / Scene2 / 而**四个模型实例的类名全是 'ReglModel2'**：
+       *   产品图标层（真图片模型）、形状 'circle' 的层、以及拿 .filter() 把记录清空的那个 bug 形态，
+       *   三者类名一字不差（tmp-model2 实测）。所以类名是恒真的废读数，只能读**着色器装了什么**：
+       *   图片模型（point/models/image.js）带 u_texture（图集）+ u_textSize（格子尺寸）两个 uniform，
+       *   方块/填充模型没有。实测对照：图标+size 回调 → ['u_dataTexture','u_texture','u_textSize']（36 个）；
+       *   'circle' → ['u_dataTexture']（40 个）；.filter() 清空记录的那个 → **一个都没有**（18 个）。
+       *   这条不恒真：模型一旦退化成方块，这两个键就消失 ⇒ 失败。 */
+      const bound = await evj(`(()=>{const l=window.__traffic.registry[${JSON.stringify(n)}].layer
+        try{ const m=(l.models||[])[0]
+          if(!m) return JSON.stringify({模型:'无',模型数:(l.models||[]).length})
+          const us=Object.keys(m.uniforms||{})
+          return JSON.stringify({模型:m.constructor.name, u_texture:us.indexOf('u_texture')>=0,
+            u_textSize:us.indexOf('u_textSize')>=0, 键数:us.length})
+        }catch(e){ return JSON.stringify({err:e.message}) }})()`)
+      check(!!bound && bound.u_texture === true && bound.u_textSize === true,
+        `${n} **绑定**的模型是图片模型（着色器带 u_texture + u_textSize；退化成方块模型时这两个键就没了）`, bound)
     }
-    const sizeOk = typeof raw.size === 'number' && raw.size >= spec.size[0] && raw.size <= spec.size[1]
-    check(sizeOk, `${n} 尺寸在 ${spec.size[0]}~${spec.size[1]}px（够看清形状，又不盖底图）`, raw.size)
+    const szMain = raw.sizeP ? raw.sizeP.散点 : raw.size
+    const sizeOk = typeof szMain === 'number' && szMain >= spec.size[0] && szMain <= spec.size[1]
+    check(sizeOk, `${n} 尺寸在 ${spec.size[0]}~${spec.size[1]}px（够看清形状，又不盖底图）`, raw.sizeP || raw.size)
+    if (raw.sizeP) {
+      check(raw.sizeP.桶 === 0, `${n} 聚合桶上尺寸归零（桶上不画图标；回调式尺寸见 initTrafficLayers 注释）`, raw.sizeP)
+    }
     // 颜色：单色层直接比字符串；按状态取色的层（camera/trafficLight）比 byValue 的取值集合
     const got = raw.color && raw.color.byValue
       ? [...new Set(Object.values(raw.color.byValue))].sort()

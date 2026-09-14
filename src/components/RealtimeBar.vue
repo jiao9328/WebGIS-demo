@@ -15,7 +15,10 @@
         @click="toggle(row)"
       >
         <i v-if="row.icon" class="iconfont" :class="row.icon"></i>
-        <!-- 动态车辆没有对应的 iconfont 字形，原来用 🚗 emoji 占位（彩色位图、无法着色） -->
+        <!-- 信号灯/警员：两套 iconfont 里都没有红绿灯/警徽字形（原来是飞机 icon-icon-test、
+             房子 icon-shouye-copy —— 字形存在但语义是错的），改用与地图徽章同源的矢量字形。
+             动态车辆没有对应字形，用 CarIcon 组件（原来用 🚗 emoji 占位：彩色位图、无法着色）。 -->
+        <TrafficGlyph v-else-if="row.glyph" class="rt-glyph" :name="row.glyph" />
         <CarIcon v-else class="rt-car" />
         <span class="rt-name">{{ row.label }}</span>
         <span class="rt-switch">
@@ -34,6 +37,7 @@
 import { inject, ref } from 'vue'
 import { setTrafficLayerVisible } from '../tools/initTrafficLayers'
 import CarIcon from './CarIcon.vue'
+import TrafficGlyph from './TrafficGlyph.vue'
 
 // 开态以 store.trafficOn 为唯一来源：手动点击与 AI 助手调图层都会同步点亮
 const { store } = inject('$store')
@@ -42,8 +46,8 @@ const show = ref(true)
 // 图层行：复用交通图层注册表（initTrafficLayers 7 类 L7 图层）+ 前端动态车辆模拟层（emoji 无 iconfont 字形）
 const rows = [
   { key: 'camera', label: '监控探头', icon: 'icon-supervision-full' },
-  { key: 'trafficLight', label: '信号灯', icon: 'icon-icon-test' },
-  { key: 'police', label: '警员分布', icon: 'icon-shouye-copy' },
+  { key: 'trafficLight', label: '信号灯', glyph: 'trafficLight' }, // 原 icon-icon-test 是飞机
+  { key: 'police', label: '警员分布', glyph: 'police' }, // 原 icon-shouye-copy 是房子
   { key: 'congestion', label: '道路拥堵', icon: 'icon-daolu' },
   { key: 'heat', label: '热力图', icon: 'icon-paint' },
   { key: 'busRoute', label: '公交线路', icon: 'icon-daohang' },
@@ -176,6 +180,14 @@ const toggle = (row) => {
   transition: color 0.15s;
 }
 
+/* 信号灯/警员行的图标（与地图徽章同源的矢量字形，尺寸对齐 iconfont 的 15px） */
+.rt-item .rt-glyph {
+  width: 15px;
+  height: 15px;
+  color: var(--text-mute);
+  transition: color 0.15s;
+}
+
 .rt-name {
   flex: 1;
 }
@@ -215,7 +227,8 @@ const toggle = (row) => {
 }
 
 .rt-item.on .iconfont,
-.rt-item.on .rt-car {
+.rt-item.on .rt-car,
+.rt-item.on .rt-glyph {
   color: var(--primary);
 }
 

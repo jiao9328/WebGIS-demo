@@ -88,7 +88,9 @@ ws.onopen = async () => {
     await sleep(500)
     const cnt = await ev(`(()=>{const it=window.__traffic.registry[${JSON.stringify(n)}]
       if(!it||!it.layer) return ${JSON.stringify(n)}==='vehicle'?'marker':'no-layer'
-      try{ const d=it.layer.layerSource&&it.layer.layerSource.data; return d? d.features.length : 'n/a' }catch(e){ return 'err:'+e.message }})()`)
+      /* 数据挂在 layerSource.originData 上（.data 是老字段，读它是 undefined ⇒ 每层都报 err） */
+      try{ const ls=it.layer.layerSource
+        const d=ls&&(ls.originData||ls.data); return d? d.features.length : 'n/a' }catch(e){ return 'err:'+e.message }})()`)
     info(n, { 开启: ok, 要素数: cnt })
   }
 
@@ -114,5 +116,6 @@ ws.onopen = async () => {
   ws.close()
   await sleep(150)
   try { await fetch(`http://localhost:${CDP}/json/close/${created.id}`) } catch { /* 忽略 */ }
-  process.exit(0)
+  /* 不显式 process.exit：Node 24 + undici WebSocket 在 Windows 上硬退会踩 libuv 断言
+   * （Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)），事件循环自己排空就干净了。 */
 }
