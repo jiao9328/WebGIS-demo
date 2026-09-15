@@ -326,7 +326,10 @@ ws.onopen = async () => {
       const med=(a)=>{const s=[...a].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]}
       return {clusters:clusters.slice(0,6), 总点数:pts.length,
         med:{lng:+med(pts.map(p=>p[0])).toFixed(5), lat:+med(pts.map(p=>p[1])).toFixed(5)}}})()`)
-    if (!ctr) { check(false, `${n} 能从实例里取到坐标（取样前提）`, ctr); continue }
+    /* 判据要连**形状**一起判：求值抛错时 evj 返回的是字符串（真值），
+     * 只判 `!ctr` 会让错误串溜过去，接着在 ctr.med.lng 上炸成 TypeError，
+     * 真正的失败原因（哪个 eval 错了）反而看不到。 */
+    if (!ctr || typeof ctr !== 'object' || !ctr.med) { check(false, `${n} 能从实例里取到坐标（取样前提）`, ctr); continue }
     /* 候选取舍：优先落在路网覆盖范围内（否则「跟路网区分开」没法同屏验证），同等条件下取密集的；
      * 密集候选取用前 6 个，若都不在范围内就退回最密集的那个并记录本条跳过。 */
     const cands = (n === 'busRoute' ? [ctr.med] : ctr.clusters).map((c) => [c.lng, c.lat])

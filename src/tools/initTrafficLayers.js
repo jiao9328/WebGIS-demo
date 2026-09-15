@@ -115,6 +115,12 @@ const resetCursor = () => {
  *     一眼看出「这里有一撮点」，且缩小/放大都不变形、不随桶内点数变大。
  */
 const SYMBOL = 9 // 点符号半径（px）：四层统一，屏幕直径 18px
+/* 聚合圆点的尺寸。**不能沿用 SYMBOL**：size 在两种模型里语义不同 —— 图片模型 size=9 出 18px 的方框，
+ * 而 .shape('circle') 实测 size=9 只出 ~15px 直径（默认视图截图里桶的连通块 bbox 恒为 14×14、面积 170px，
+ * 反推直径 ≈15px）。11 是把直径推到 18px 的实测值（与图片方框等大，也才塞得下 3 位数字）。
+ * ★ 仍然是**常量回调**，绝不随桶内点数变化 —— 旧版半径随点数从 24px 涨到 44px，缩小反而变大，
+ *   正是用户第 6 条「滚轮向下缩小时图层符号不要变大」的反例。 */
+const DOT = 11
 
 const ICON = {
   camera: { faulty: '#F04438', dot: '#5E35B1', title: '监控', z: 20 },
@@ -138,12 +144,17 @@ const ICON = {
  * 用图层自带的 `source(data, {cluster:true})` 而不是自己分桶：DataSourcePlugin 会在缩放变化时
  * 自动重算（zoom 空间 = floor(mapZoom-1)），不需要任何 zoom 监听——全项目现在也确实一个都没有。
  *
- * radius 是**屏幕像素**：四类点疏密差得远，按层调。数值来自实测
- * （scripts/cdp-l7cluster-probe.mjs / 早期的 tmp-cluster-tune 测量）：
- *   监控 220 点铺满全城，22；信号灯 231 点较散，12；警员 62 点稀疏，16；公交站 225 点挤在
- *   默认视图 83×98 像素里，16（再大就并成一个桶，再小就散成一片）。
- *   注：裁剪（roadCoverage）会把不在路网里的点先滤掉，实际入桶的点数比上面少
- *   （信号灯 231→40、警员 62→16、探头和公交站基本不变），radii 沿用实测值不动。
+ * radius 是**屏幕像素**：四类点疏密差得远，按层调。
+ * ★ 这套数值是 2026-09-15 为**18px 的小 emoji 符号**重新调小的，不是上一版徽章时代的值。
+ *   上一版是 {camera:22, trafficLight:12, police:16, busStop:16} —— 那是给更大的徽章调的，
+ *   符号缩到 18px 后明显偏大，用户 2026-09-15 说「太稀疏了，缩放到看到整个道路网时
+ *   也要能看到几十个点」，实测默认视图只剩 8 个散点、整网视图 82 个要素，都太少。
+ * 量尺是 scripts/cdp-zoomlevels.mjs（逐级缩小，向活索引查这一级出几个桶几个散点 + 截图数像素）。
+ *   调小之后的实测（四层全开，中心 [118.037,36.813]，视图内总要素 = 桶 + 散点）：
+ *     zoom 12   → 231   11.3 → 190（＝整条路网刚好铺满屏幕那一级，用户要的「几十个」在这里）
+ *     zoom 10.5 → 116    9.5 →  68（默认视图）   8.5 → 38   7.5 → 22
+ *   桶内最多：11.3 只有 26，9.5 才 63，要 zoom ≤8.5 才上到 212/225 —— 即 countSize 的
+ *   8px 档（≥100）在整网视图及更近处其实用不到，是给缩得更远时兜底、防止三位数撑破圆。
  * maxZoom 取 11 是刻意的：
  *   · 由 zoom 空间定义（mapZoom-1）⇒ map zoom ≥ 12 时**全部散开**，默认视图 9.5 出聚合点、
  *     区县视图 12 过渡、放大到 13+ 全是个体图标；
@@ -151,17 +162,28 @@ const ICON = {
  *     聚合点、图标不见了」；
  *   · 顺带保住 cdp-probe14 的取样缩放（首次 15、回退 13.5/12 —— 都 ≥12，图标照常画出来）。
  */
-const CLUSTER = { camera: 22, trafficLight: 12, police: 16, busStop: 16, maxZoom: 11 }
+const CLUSTER = { camera: 8, trafficLight: 5, police: 6, busStop: 6, maxZoom: 11 }
 
-/* 「桶上还是散点上」——两层各一个 size 回调，各自返回 0（L7 里 size=0 就是不画，
+/* 「桶上还是散点上」——图标层与聚合层各一个 size 回调，各自返回 0（L7 里 size=0 就是不画，
  * 逐点连通块判定过：那个位置零墨迹，见 cdp-l7cluster-probe 的 E1）。
  * ★ 必须用 size 回调而不是 .filter()：filter 会把被滤掉的记录清成 {}，L7 的 PointLayer 在
  *   「空数据」分支上认不出 { field: 'zb-emoji-*' } 这种图标名，模型退化成普通方块
  *   （根因与实测见下面 pointStack 的注释，cdp-probe14 曾因此一直假通过）。
- * ★ 两层尺寸是**同一个 SYMBOL**：上一版聚合气泡半径 12→22px 随桶内点数增长，于是滚轮缩小、
- *   散点并成桶时符号反而变大 —— 正是用户 2026-09-15 说的「滚轮向下缩小时图层符号不要变大」。 */
+ * ★ 图标与聚合点**都是常量回调**，绝不随桶内点数变化：上一版聚合气泡半径 12→22px 随点数增长，
+ *   于是滚轮缩小、散点并成桶时符号反而变大 —— 正是用户 2026-09-15 说的「滚轮向下缩小时
+ *   图层符号不要变大」。（DOT 与 SYMBOL 是两个不同常量，但都换算成屏幕 18px，见上面 DOT 的注释。） */
 const scatterSize = (n) => (n > 1 ? 0 : SYMBOL) // 图标层：只画散点
-const clusterSize = (n) => (n > 1 ? SYMBOL : 0) // 聚合点：只画桶
+const clusterSize = (n) => (n > 1 ? DOT : 0) // 聚合点：只画桶
+/* 桶内数字（用户 2026-09-15：「缩小之后 emoji 丢失，只剩不含信息量的实心圆」⇒ 把数量补回来）。
+ * 字号**分档**，不能固定：圆的直径 18px，去掉边缘只剩 ~16px 可用，而粗体数字约 0.55em/字符，
+ * 3 位数（当前桶内最多 225）用 10px 要约 16.5px、正好撑破圆，故 ≥100 降到 8px。
+ * 回调必须恒返回数字（字段缺失时会**无参调用**，`undefined > 1` 为假 ⇒ 返回 0 ⇒ 不画，正是想要的）。 */
+const countSize = (n) => (n > 1 ? (n >= 100 ? 8 : 10) : 0)
+/* 数字样式。textAllowOverlap 必须开：L7 默认按 filterGlyphs 做文字避让，密集处会把数字**整批丢掉**，
+ * 看起来就是「有的桶有数字、有的没有」；而且避让还在 zoom 变化 >0.5 时触发重建，白白多一层开销。
+ * textAnchor/textOffset 让数字落在圆的**正中心**（textOffset 单位是字形布局单位，屏幕位移 ≈ offset×size/24，
+ * [0,0] 即不偏移）。 */
+const COUNT_STYLE = { textAllowOverlap: true, textAnchor: 'center', textOffset: [0, 0], fontWeight: 700 }
 
 /* 取图标名还是退回几何形状：
  * 图标是异步注册的（scene.addImage 内部 new Image + 解码），若在图标就绪前建图层，
@@ -178,7 +200,7 @@ const registry = {}
 /* 每个条目：{ visible: 当前显示状态, layer: 主图层实例, group: 该点位的一套图层 }
  * ★ `layer` 必须始终指向**主图标层**：cdp-probe13 / probe14 / probe16 / shot-readme / cdp-l7*.mjs
  *   都直接读它（读 size/shape/颜色、取 originData、取样计数），字段名与语义不能变。
- *   `group` 是一套点位的那组图层（现在是 2 个：图标 + 聚合点），显示/隐藏/销毁都整组来。 */
+ *   `group` 是一套点位的那组图层（现在是 3 个：图标 + 聚合点 + 桶内数字），显示/隐藏/销毁都整组来。 */
 const ensure = (name) => {
   if (!registry[name]) registry[name] = { visible: false, layer: null, group: [] }
   return registry[name]
@@ -195,13 +217,16 @@ const mount = (item, built) => {
   for (const l of group) sceneRef.addLayer(l)
 }
 
-/* ---------------- 点位符号的通用装配（2 层：图标 + 聚合点） ----------------
- * 一套点位 = 2 个 L7 图层（自下而上，zIndex 递增）：
+/* ---------------- 点位符号的通用装配（3 层：图标 + 聚合点 + 桶内数字） ----------------
+ * 一套点位 = 3 个 L7 图层（自下而上，zIndex 递增）：
  *   图标 z+0  散点上的 emoji 位图 —— .color('#FFFFFF') 走原色分支（全彩）；给非白色则走遮罩分支
  *             （信号灯按 state 染色、探头故障点染红，都是「整枚变色」，见 trafficIcons.js 文件头）
  *   聚合 z+1  桶上的实心圆点（主色同族深色），尺寸与图标**完全一致**
- * 两个图层共用同一份 FC：各自建 supercluster 索引（几百个点，开销可忽略），换来的是
- * 图标/聚合点永远同源同缩放，不会出现「对不上」的中间态。
+ *   数字 z+2  桶心的白色点数（用户 2026-09-15：「只剩不含信息量的实心圆」⇒ 把数量补回来）
+ * 三个图层共用同一份 FC：各自建 supercluster 索引（几百个点，开销可忽略），换来的是
+ * 图标/聚合点/数字永远同源同缩放，不会出现「对不上」的中间态。
+ * ★ 数字为什么单独一层而不是画在聚合层上：L7 的文字没有背景/内边距（padding 只用在
+ *   避让里），「深色实心圆 + 居中白字」只能拆成两层叠出来。
  *
  * 互斥显示（关键）：桶上不画图标、散点上不画聚合点。历史上这里踩过一个很深的坑，别改回去：
  *   ★ 曾经用 .filter('point_count', 单散点)，**它是坏的**，根因在 L7：
@@ -227,7 +252,18 @@ const pointStack = (key, data) => {
    * 散点位置也会多出一颗深色圆点（看起来像「每个点都被描了个深色底」）。 */
   const main = mk('', 0).shape(shapeOf(key)).size('point_count', scatterSize)
   const dot = mk('-聚', 1).shape('circle').size('point_count', clusterSize).color(c.dot).style({ opacity: 0.92 })
-  const layers = [main, dot]
+  /* 桶内数字：白色、居中，压在圆点之上（zIndex 再 +1）。
+   * 取 point_count_abbreviated（supercluster 自带，≥1000 自动缩成 '1.2k'），省得自己截断；
+   * 字号仍按 point_count 的数字位数分档（见 countSize）。
+   * 文字层可以放心用 .shape(字段,'text') —— text 模型**两条分支都返回 'text'**
+   * （getModelType 认不出图标名时也兜底成 text），不像图片层那样会退化成方块。
+   * 但**必须写两参**：单参 .shape('text') 的 values 是 undefined，空数据时会掉进 'normal' 分支变方块。 */
+  const count = mk('-数', 2)
+    .shape('point_count_abbreviated', 'text')
+    .size('point_count', countSize)
+    .color('#FFFFFF')
+    .style(COUNT_STYLE)
+  const layers = [main, dot, count]
   /* 点聚合点 → 弹「这里有几个点」+ 飞到该桶并放大（聚合点的用途就是「放大看细节」）。
    * 展开级别优先用 supercluster 的 getClusterExpansionZoom（保证这桶真的散开），
    * 拿不到就退化成 +2；上限 15，免得一路飞到楼顶。
@@ -474,7 +510,7 @@ export function setTrafficLayerVisible(name, visible) {
     if (!item.layer) {
       mount(item, layerFactories[name]())
     } else {
-      for (const l of item.group) l.show() // 点位层是一组 2 个（图标 + 聚合点），整组显隐
+      for (const l of item.group) l.show() // 点位层是一组 3 个（图标 + 聚合点 + 数字），整组显隐
     }
   } else {
     for (const l of item.group) l.hide()
