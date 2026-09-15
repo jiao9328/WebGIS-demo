@@ -1,9 +1,14 @@
 /* 缩放级别体检：把四类点图层打开，逐级缩小（10.5 → 5.5），每级截图 + 记账。
  *
- * 起因（用户 2026-09-15）：「聚合标注有问题，缩小之后还是 emoji 符号丢失，变成含数字的实心大圆形」。
- * 光看源码看不出问题 —— 源码里聚合层就是 .shape('circle') + 同尺寸的实心圆点，没有任何文字。
- * 所以这里**只做测量**：每一级都问 L7 的聚合索引「这一级会出几个桶几个散点」，
- * 同时截图数像素（emoji 的彩色墨迹还剩多少、深色实心块有多少），把「看到的」和「配的」对上。
+ * 起因（用户 2026-09-15）：「聚合标注有问题，缩小之后还是 emoji 符号丢失，变成含数字的实心大圆形」，
+ * 以及后来推翻桶样式的那句「深色实心圆 + 居中白数字不要，缩小后还是 emoji」。
+ * 光看源码看不出问题（同一份配置在 L7 的空数据分支上会建成完全不同的模型），所以这里**只做测量**：
+ * 每一级都问 L7 的聚合索引「这一级会出几个桶几个散点」，同时截图数彩色墨迹像素。
+ *
+ * ★ 现在的读法（桶也画 emoji 之后）：符号尺寸全程恒定 ⇒ **彩色墨迹px / 视图内要素数**应当
+ *   大体是个常数。哪一级这个比值塌下去，就说明那一级有符号没画出来（正是用户抱怨的现象）。
+ *   上一版桶是纯色圆盘，在这个比值上表现为「越缩越小」——那正是要抓的病。
+ *   注意这只是**近似量**：底图本身也有蓝/橙系像素，所以看趋势，不看绝对值。
  *
  * 记账口径：supercluster 的树 zoom = floor(mapZoom - 1)（DataSourcePlugin.js:104/110），
  * 所以查索引要用 floor(zoom-1)，不是 floor(zoom)。
@@ -59,7 +64,7 @@ await ev(`(()=>{try{window.__traffic.setVisible('vehicle',false)}catch(e){}
   return 1})()`)
 await sleep(500)
 
-console.log('zoom | 桶数 | 散点数 | 桶内最多 | 彩色墨迹px | 深色块px | 视图内总要素')
+console.log('zoom | 桶数 | 散点数 | 桶内最多 | 彩色墨迹px | 视图内总要素 | 墨迹/要素')
 const rows = []
 for (const z of ZOOMS) {
   await ev(`(()=>{window.__map.jumpTo({zoom:${z},center:[118.037,36.813]}); return 1})()`)
@@ -88,26 +93,22 @@ for (const z of ZOOMS) {
   const buf = Buffer.from(shot.data, 'base64')
   writeFileSync(file, buf)
   const img = decodePNG(buf)
-  // 彩色墨迹：四类符号的自有色（📹深灰蓝 / 👮蓝 / 🚏蓝橙 / 🚦四状态色）—— 用整屏「高饱和」近似
+  /* 彩色墨迹：四类符号的自有色（📹深灰蓝 / 👮蓝 / 🚏蓝橙 / 🚦四状态色）—— 用整屏「高饱和」近似。
+   * 桶已经不再画纯色圆盘（旧版的四个「聚合*」色类随之删掉），所以不再单列「深色块px」。 */
   const sat = classifyPixels(img, { x: 0, y: 0, width: img.width, height: img.height }, [
     { key: '绿', hex: '#12B76A', maxDist: 55 },
     { key: '红', hex: '#F04438', maxDist: 55 },
-    { key: '橙', hex: '#F79009', maxDist: 55 },
-    { key: '聚合紫', hex: '#5E35B1', maxDist: 45 },
-    { key: '聚合蓝', hex: '#1E3A8A', maxDist: 45 },
-    { key: '聚合绿', hex: '#0E9B57', maxDist: 45 },
-    { key: '聚合橙', hex: '#C9530C', maxDist: 45 }
+    { key: '橙', hex: '#F79009', maxDist: 55 }
   ])
   const ink = sat.绿 + sat.红 + sat.橙
-  const dots = sat.聚合紫 + sat.聚合蓝 + sat.聚合绿 + sat.聚合橙
   const tot = KEYS.map((k) => b.out[k] || {}).reduce((a, c) => a + (c.buckets || 0) + (c.scatter || 0), 0)
   const maxN = Math.max(...KEYS.map((k) => (b.out[k] && b.out[k].max) || 0))
   console.log(
     `${String(z).padStart(4)} | ${String(KEYS.reduce((a, k) => a + ((b.out[k] || {}).buckets || 0), 0)).padStart(4)} | ` +
     `${String(KEYS.reduce((a, k) => a + ((b.out[k] || {}).scatter || 0), 0)).padStart(6)} | ${String(maxN).padStart(8)} | ` +
-    `${String(ink).padStart(10)} | ${String(dots).padStart(8)} | ${tot}`
+    `${String(ink).padStart(10)} | ${String(tot).padStart(11)} | ${(tot ? ink / tot : 0).toFixed(1).padStart(9)}`
   )
-  rows.push({ z, out: b.out, ink, dots, tot })
+  rows.push({ z, out: b.out, ink, tot })
   if (b.out.camera && b.out.camera.err) console.log('   ! camera:', b.out.camera.err)
 }
 console.log('\n分层明细（桶/散点，树 zoom=t）：')

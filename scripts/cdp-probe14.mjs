@@ -6,8 +6,10 @@
  * 再加客观判据：所有图层用色与底图总道路蓝 #1990FF 的 redmean 色差（≥120）、层与层之间色相 ≥25°，
  * 避免「看起来像蓝」的主观争论。
  *
- * 前置：pnpm dev(:5180)、Chrome headless --remote-debugging-port=9223
- * 用法：node scripts/cdp-probe14.mjs
+ * 前置：本项目的 dev 服务器在 **5173**、Chrome headless --remote-debugging-port=9223
+ * 用法：APP_PORT=5173 node scripts/cdp-probe14.mjs
+ *   ★ 必须显式带上 APP_PORT —— 本文件的默认值 5180 是「单页 demo」那套的端口，漏了会
+ *     整轮 boot 失败、后面几十条全红，看起来像把符号改坏了（踩过一次，教训在案）。
  */
 import { writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -111,7 +113,7 @@ const HUE = `window.__cm=window.__cm||{
  *   · 「互相区分」的手段**从颜色换成了字形**：三层走原色分支（图层色恒为 '#FFFFFF'，
  *     只是「放行纹理原色」的开关，不是画出来的颜色），四层靠 📹/👮/🚏/🚦 的形状区分。
  *     所以下面 B 段不再拿点位层的主色两两比 —— 那是上一版（手绘彩色徽章）的判据，现在恒同色。
- *   · 点符号**真的画到屏幕上了吗**由 scripts/cdp-probe17.mjs 的 G 段逐要素数渲染像素来验
+ *   · 点符号**真的画到屏幕上了吗**由 scripts/cdp-probe17.mjs 的 H 段逐要素数渲染像素来验
  *     （信号灯剪影的状态色是底图里不存在的色，命中即图标），C 段因而只留线图层。 */
 const SPEC = {
   camera: { shape: TRAFFIC_ICONS.camera.id, size: [8, 10], colors: ['#FFFFFF', '#F04438'] },
@@ -123,7 +125,7 @@ const SPEC = {
 const ALL = Object.keys(SPEC)
 const POINT_KEYS = ['camera', 'trafficLight', 'police', 'busStop']
 /* 视觉层（C 段）只跑线图层：点位层的图层色是白，而亮色底图整片都接近白，
- * 按色数像素会把底图全算进来（假通过）。点位层的渲染证据在 probe17 G 段。 */
+ * 按色数像素会把底图全算进来（假通过）。点位层的渲染证据在 probe17 H 段。 */
 const VISUAL_KEYS = ['busRoute']
 const MIN_DIST = 120 // redmean 距离：低于此值就当作「和路网同色」
 
@@ -159,12 +161,12 @@ ws.onopen = async () => {
       return o.field}
     // shape 走同一条 configService 通路，但 layer.shapeOption 读起来更直接
     const shape=(l.shapeOption&&l.shapeOption.field)||val('shape')
-    /* ★ 点位层的 size 现在是「按 point_count 取值」的回调（.size('point_count', n => n>1?0:尺寸)），
-     *   不能再读 .field（那是 'point_count'）。喂两个样本：1 = 散点（真画出来的那个值）、
-     *   2 = 聚合桶（必须是 0 —— 桶上不画图标，这就是互斥显示的另一半）。 */
+    /* ★ 点位层的 size 现在是**常量** .size(SYMBOL)：散点和聚合桶画同一枚 emoji、同一个大小
+     *   （用户 2026-09-15 推翻了「深色实心圆 + 居中白数字」）。常量写法下 L7 把值放在 attributes
+     *   上、没有 field，落在 .values 还是 .field 上不定，两个都读。 */
     const sz=a.size
-    const sizeP=(sz&&typeof sz.values==='function')?{field:sz.field,散点:sz.values(1),桶:sz.values(2)}:null
-    return JSON.stringify({shape, size:val('size'), sizeP, color:val('color'),
+    const sizeV=(sz&&typeof sz.values!=='function')?(sz.values!==undefined?sz.values:sz.field):null
+    return JSON.stringify({shape, size:val('size'), sizeV, color:val('color'),
       stroke:(l.rawConfig||{}).stroke, strokeWidth:(l.rawConfig||{}).strokeWidth,
       n:(l.layerSource&&l.layerSource.originData&&l.layerSource.originData.features||[]).length})})()`
 
@@ -209,12 +211,9 @@ ws.onopen = async () => {
       check(!!bound && bound.u_texture === true && bound.u_textSize === true,
         `${n} **绑定**的模型是图片模型（着色器带 u_texture + u_textSize；退化成方块模型时这两个键就没了）`, bound)
     }
-    const szMain = raw.sizeP ? raw.sizeP.散点 : raw.size
+    const szMain = typeof raw.sizeV === 'number' ? raw.sizeV : raw.size
     const sizeOk = typeof szMain === 'number' && szMain >= spec.size[0] && szMain <= spec.size[1]
-    check(sizeOk, `${n} 尺寸在 ${spec.size[0]}~${spec.size[1]}px（够看清形状，又不盖底图）`, raw.sizeP || raw.size)
-    if (raw.sizeP) {
-      check(raw.sizeP.桶 === 0, `${n} 聚合桶上尺寸归零（桶上不画图标；回调式尺寸见 initTrafficLayers 注释）`, raw.sizeP)
-    }
+    check(sizeOk, `${n} 尺寸在 ${spec.size[0]}~${spec.size[1]}px（够看清形状，又不盖底图）`, raw.sizeV != null ? raw.sizeV : raw.size)
     // 颜色：单色层直接比字符串；按状态取色的层（camera/trafficLight）比 byValue 的取值集合
     const got = raw.color && raw.color.byValue
       ? [...new Set(Object.values(raw.color.byValue))].sort()
@@ -384,7 +383,7 @@ ws.onopen = async () => {
     // 下限：每个落在取样区里的要素至少该有 4px 实心（4.5px 圆点去掉 1px 白描边后约 5~9px）
     const min = Math.max(4 * inside, n === 'busRoute' ? 150 : 24)
     check(total >= min, `${n} 规范色像素 ≥${min}（该层图标确实画到屏幕上了）`, { 合计: total })
-    /* 「图标必须是若干离散小块」这条判据本来在这里，现已搬到 probe17 的 G 段并**变严**：
+    /* 「图标必须是若干离散小块」这条判据本来在这里，现已搬到 probe17 的 H 段并**变严**：
      * 不再是「整屏数出 ≥2 个大小合适的块」，而是「逐要素投影到屏幕坐标、在它自己的 26×26 窗口里
      * 数该状态色的像素」—— 位置对不上、颜色用错状态都算失败。原因见 B 段注释：
      * 点位层的图层色现在是白，在亮色底图上按色数像素整片都会被算进来（假通过）。 */

@@ -50,7 +50,8 @@ if (!ready) { console.log(`页面/桥没就绪：确认 dev 服务器在 ${PORT}
 
 /* 画布：四列（一类符号一列），每列自上而下
  *   ① 实际大小（活图层上读到的尺寸）压在一段路网蓝条上，判断「在真实底图上还认不认得出」
- *   ② ZOOM 倍最近邻放大 ③ 同尺寸的聚合点 ④ 实时数据栏里的 15px 小图标
+ *   ② ZOOM 倍最近邻放大 ③ 散点 / 聚合桶并排（证明桶画的是**同一枚、同一尺寸**的图标）
+ *   ④ 实时数据栏里的 15px 小图标
  * ★ 画布**宽高都由排版算出来**（页面里算完返回），本地不写字面量：上一版写死 460×260，
  *   而 ④ 行实际在 y=266 —— 被裁掉不说，露出来的还是页面自己的地图界面，识图直接去描述底图了。
  *   宽度更不能「按画布均分」：列距得容得下放大块，否则相邻两列会叠在一起（见下面 colW 的注释）。 */
@@ -59,9 +60,9 @@ const ZOOM = 8
 const draw = `(async () => {
   const M = await import('/src/tools/trafficIcons.js')
   const KEYS = Object.keys(M.TRAFFIC_ICONS)
-  // 尺寸与聚合点颜色从**活图层**上读：解析源码或抄一份都会漂移。
-  // 读法沿用 cdp-probe17：单参 .size(9) 存 { field }、回调 .size('f',cb) 存 { values }，
-  // 只读 .values 会把前者读成 undefined（那边踩过一次）。
+  // 尺寸从**活图层**上读：解析源码或抄一份都会漂移。
+  // 读法沿用 cdp-probe17：常量 .size(9) 的值落在 .values 还是 .field 上不定，两个都试；
+  // 回调 .size('f',cb) 存的是函数，这里已经不用了（现在四层都是常量）。
   const attr = (l, key) => {
     const a = (l && l.configService && l.configService.getAttributeConfig(l.id)) || {}
     const v = a[key]
@@ -77,7 +78,7 @@ const draw = `(async () => {
   const missing = []
   for (const k of KEYS) {
     const it = window.__traffic.registry[k] || {}
-    live[k] = { size: attr(it.layer, 'size'), dot: attr(it.group && it.group[1], 'color') }
+    live[k] = { size: attr(it.layer, 'size') }
     if (live[k].size === null) missing.push(k)
   }
   // 宁可直接报错也不给兜底值：预览图悄悄按一个假尺寸画出来，比不画更坏
@@ -135,12 +136,14 @@ const draw = `(async () => {
     g.fillText('实际 ' + d + 'px' + (icon.mode === 'mask' ? ' ×4 状态色' : ' 原色'), x, L.sizeLabel)
     // ② ZOOM 倍放大 ——「这么小还看不看得出来」全靠这一栏
     g.drawImage(icon.mode === 'mask' ? tinted(imgs[k], stateHex.green) : imgs[k], x, L.zoomTop, z, z)
-    // ③ 同尺寸的聚合点（桶上不画图标、改画这个实心圆点）
-    if (live[k].dot) {
-      g.fillStyle = live[k].dot; g.beginPath(); g.arc(x + d / 2, L.dotMid, d / 2, 0, 7); g.fill()
-      g.fillStyle = '#8C9AB0'; g.font = '10px sans-serif'
-      g.fillText('聚合点 ' + live[k].dot, x + d + 6, L.dotMid + 4)
-    }
+    /* ③ 缩小时的聚合桶：用户 2026-09-15「深色实心圆 + 居中白数字不要，缩小后还是 emoji」
+     *   ⇒ 桶与散点画的是**同一枚 emoji、同一个尺寸**，所以这一栏就是并排两枚一模一样的图标。
+     *   并排是为了让「一样」这件事在预览图上一眼可查（也方便以后有人改回圆盘时立刻看出来）。 */
+    const bucket = icon.mode === 'mask' ? tinted(imgs[k], stateHex.green) : imgs[k]
+    g.drawImage(icon.mode === 'mask' ? tinted(imgs[k], stateHex.green) : imgs[k], x, L.dotMid - d / 2, d, d)
+    g.drawImage(bucket, x + d + 6, L.dotMid - d / 2, d, d)
+    g.fillStyle = '#8C9AB0'; g.font = '10px sans-serif'
+    g.fillText('散点 = 聚合桶', x + 2 * d + 12, L.dotMid + 4) // 标签要短：列距只有 z+12，写长了会压到下一列
     // ④ 实时数据栏的 15px 小图标：面板渲染的就是这个字符本身（TrafficGlyph.vue）
     g.font = '15px ' + FONT_EMOJI
     g.textBaseline = 'middle'; g.fillStyle = '#000'
@@ -150,7 +153,6 @@ const draw = `(async () => {
   }
   document.body.appendChild(cv)
   return JSON.stringify({ KEYS, 尺寸: Object.fromEntries(KEYS.map(k => [k, live[k].size])),
-    聚合点: Object.fromEntries(KEYS.map(k => [k, live[k].dot])),
     W: cv.width, H: cv.height, d, z, colW, 左起: 6, 落款: L })
 })()`
 const drew = await ev(draw)

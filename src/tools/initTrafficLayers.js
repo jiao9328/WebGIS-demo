@@ -111,27 +111,22 @@ const resetCursor = () => {
  *     所以 18px 的满框 emoji 与车**视觉等大**（烤图时墨迹占方框 96%，故实际墨迹 ≈17px）。
  *   · 着色：彩色 emoji 靠「图层色＝白」走原色分支，想要「整枚染成某个颜色」就给非白色
  *     （遮罩分支）—— 信号灯的状态四色、探头故障点的红都走这条，详见 trafficIcons.js 文件头。
- *   · 聚合点（同一位置合并了多个点）用**主色同族深色**的实心圆点，尺寸与图标**完全一致** ——
- *     一眼看出「这里有一撮点」，且缩小/放大都不变形、不随桶内点数变大。
+ *   · 聚合点（缩小时挨得近被合并的那些）**照画同一枚 emoji、同一尺寸** —— 用户 2026-09-15：
+ *     「深色实心圆 + 居中白数字不要，缩小后还是 emoji」。所以桶和散点看起来一模一样，
+ *     「这一撮有几个」不再由符号承担，改由**点击**给出（见 pointStack 的 onClusterClick）。
+ *     尺寸全程恒定，绝不随桶内点数变（第 6 条：滚轮向下缩小时符号不要变大）。
  */
 const SYMBOL = 9 // 点符号半径（px）：四层统一，屏幕直径 18px
-/* 聚合圆点的尺寸。**不能沿用 SYMBOL**：size 在两种模型里语义不同 —— 图片模型 size=9 出 18px 的方框，
- * 而 .shape('circle') 实测 size=9 只出 ~15px 直径（默认视图截图里桶的连通块 bbox 恒为 14×14、面积 170px，
- * 反推直径 ≈15px）。11 是把直径推到 18px 的实测值（与图片方框等大，也才塞得下 3 位数字）。
- * ★ 仍然是**常量回调**，绝不随桶内点数变化 —— 旧版半径随点数从 24px 涨到 44px，缩小反而变大，
- *   正是用户第 6 条「滚轮向下缩小时图层符号不要变大」的反例。 */
-const DOT = 11
 
 const ICON = {
-  camera: { faulty: '#F04438', dot: '#5E35B1', title: '监控', z: 20 },
+  camera: { faulty: '#F04438', title: '监控', z: 20 },
   trafficLight: {
     // 四色与弹窗 stateMap 同源（green/red/yellow/fault），按状态取色而不是按数组下标
     state: { green: '#12B76A', red: '#F04438', yellow: '#F79009', fault: '#8C9AB0' },
-    // 聚合点是「一撮信号灯」，取图层主色（绿）的深色；单个点的红/黄/绿仍按 state 给
-    dot: '#0E9B57', title: '信号灯', z: 25
+    title: '信号灯', z: 25
   },
-  police: { dot: '#1E3A8A', title: '警员', z: 30 },
-  busStop: { dot: '#C9530C', title: '公交站', z: 15 },
+  police: { title: '警员', z: 30 },
+  busStop: { title: '公交站', z: 15 },
   /* 公交线路：源数据 50 条线路的 color 列全是 #2b8cff（≈ 底图路网蓝），
    * 照数据着色就等于把线路藏进路网里，故本层统一用青绿（图层视觉决策，不读 color 列）。 */
   busRoute: { color: '#0E9AA7', width: 1.8 },
@@ -153,8 +148,8 @@ const ICON = {
  *   调小之后的实测（四层全开，中心 [118.037,36.813]，视图内总要素 = 桶 + 散点）：
  *     zoom 12   → 231   11.3 → 190（＝整条路网刚好铺满屏幕那一级，用户要的「几十个」在这里）
  *     zoom 10.5 → 116    9.5 →  68（默认视图）   8.5 → 38   7.5 → 22
- *   桶内最多：11.3 只有 26，9.5 才 63，要 zoom ≤8.5 才上到 212/225 —— 即 countSize 的
- *   8px 档（≥100）在整网视图及更近处其实用不到，是给缩得更远时兜底、防止三位数撑破圆。
+ *   桶内最多：11.3 只有 26，9.5 才 63，要 zoom ≤8.5 才上到 212/225 —— 即「一撮几十上百个」
+ *   只出现在缩得比较远的几级，那些级别上桶长什么样直接决定整张图的观感。
  * maxZoom 取 11 是刻意的：
  *   · 由 zoom 空间定义（mapZoom-1）⇒ map zoom ≥ 12 时**全部散开**，默认视图 9.5 出聚合点、
  *     区县视图 12 过渡、放大到 13+ 全是个体图标；
@@ -164,26 +159,13 @@ const ICON = {
  */
 const CLUSTER = { camera: 8, trafficLight: 5, police: 6, busStop: 6, maxZoom: 11 }
 
-/* 「桶上还是散点上」——图标层与聚合层各一个 size 回调，各自返回 0（L7 里 size=0 就是不画，
- * 逐点连通块判定过：那个位置零墨迹，见 cdp-l7cluster-probe 的 E1）。
- * ★ 必须用 size 回调而不是 .filter()：filter 会把被滤掉的记录清成 {}，L7 的 PointLayer 在
- *   「空数据」分支上认不出 { field: 'zb-emoji-*' } 这种图标名，模型退化成普通方块
- *   （根因与实测见下面 pointStack 的注释，cdp-probe14 曾因此一直假通过）。
- * ★ 图标与聚合点**都是常量回调**，绝不随桶内点数变化：上一版聚合气泡半径 12→22px 随点数增长，
- *   于是滚轮缩小、散点并成桶时符号反而变大 —— 正是用户 2026-09-15 说的「滚轮向下缩小时
- *   图层符号不要变大」。（DOT 与 SYMBOL 是两个不同常量，但都换算成屏幕 18px，见上面 DOT 的注释。） */
-const scatterSize = (n) => (n > 1 ? 0 : SYMBOL) // 图标层：只画散点
-const clusterSize = (n) => (n > 1 ? DOT : 0) // 聚合点：只画桶
-/* 桶内数字（用户 2026-09-15：「缩小之后 emoji 丢失，只剩不含信息量的实心圆」⇒ 把数量补回来）。
- * 字号**分档**，不能固定：圆的直径 18px，去掉边缘只剩 ~16px 可用，而粗体数字约 0.55em/字符，
- * 3 位数（当前桶内最多 225）用 10px 要约 16.5px、正好撑破圆，故 ≥100 降到 8px。
- * 回调必须恒返回数字（字段缺失时会**无参调用**，`undefined > 1` 为假 ⇒ 返回 0 ⇒ 不画，正是想要的）。 */
-const countSize = (n) => (n > 1 ? (n >= 100 ? 8 : 10) : 0)
-/* 数字样式。textAllowOverlap 必须开：L7 默认按 filterGlyphs 做文字避让，密集处会把数字**整批丢掉**，
- * 看起来就是「有的桶有数字、有的没有」；而且避让还在 zoom 变化 >0.5 时触发重建，白白多一层开销。
- * textAnchor/textOffset 让数字落在圆的**正中心**（textOffset 单位是字形布局单位，屏幕位移 ≈ offset×size/24，
- * [0,0] 即不偏移）。 */
-const COUNT_STYLE = { textAllowOverlap: true, textAnchor: 'center', textOffset: [0, 0], fontWeight: 700 }
+/* 尺寸写**常量**，不再写 `.size('point_count', 回调)`：散点和聚合点都画同一枚 emoji、同一个大小，
+ * 已经不存在「桶上不画 / 散点上不画」这种互斥了，回调随之删掉。
+ * ★ 也绝不要再引入 `.filter()`：filter 会把被滤掉的记录清成 {}，L7 的 PointLayer 在「空数据」
+ *   分支上认不出 { field: 'zb-emoji-*' } 这种图标名，模型退化成普通方块
+ *   （根因与实测见下面 pointStack 的注释，cdp-probe14 曾因此一直假通过）。没有 filter 就没这个坑。
+ * ★ 尺寸**恒定**，绝不随桶内点数变化：上一版聚合气泡半径 12→22px 随点数增长，于是滚轮缩小、
+ *   散点并成桶时符号反而变大 —— 正是用户第 6 条「滚轮向下缩小时图层符号不要变大」。 */
 
 /* 取图标名还是退回几何形状：
  * 图标是异步注册的（scene.addImage 内部 new Image + 解码），若在图标就绪前建图层，
@@ -200,7 +182,7 @@ const registry = {}
 /* 每个条目：{ visible: 当前显示状态, layer: 主图层实例, group: 该点位的一套图层 }
  * ★ `layer` 必须始终指向**主图标层**：cdp-probe13 / probe14 / probe16 / shot-readme / cdp-l7*.mjs
  *   都直接读它（读 size/shape/颜色、取 originData、取样计数），字段名与语义不能变。
- *   `group` 是一套点位的那组图层（现在是 3 个：图标 + 聚合点 + 桶内数字），显示/隐藏/销毁都整组来。 */
+ *   `group` 是一套点位的那组图层（现在是 1 个：emoji 图标层），显示/隐藏/销毁都整组来。 */
 const ensure = (name) => {
   if (!registry[name]) registry[name] = { visible: false, layer: null, group: [] }
   return registry[name]
@@ -217,60 +199,48 @@ const mount = (item, built) => {
   for (const l of group) sceneRef.addLayer(l)
 }
 
-/* ---------------- 点位符号的通用装配（3 层：图标 + 聚合点 + 桶内数字） ----------------
- * 一套点位 = 3 个 L7 图层（自下而上，zIndex 递增）：
- *   图标 z+0  散点上的 emoji 位图 —— .color('#FFFFFF') 走原色分支（全彩）；给非白色则走遮罩分支
- *             （信号灯按 state 染色、探头故障点染红，都是「整枚变色」，见 trafficIcons.js 文件头）
- *   聚合 z+1  桶上的实心圆点（主色同族深色），尺寸与图标**完全一致**
- *   数字 z+2  桶心的白色点数（用户 2026-09-15：「只剩不含信息量的实心圆」⇒ 把数量补回来）
- * 三个图层共用同一份 FC：各自建 supercluster 索引（几百个点，开销可忽略），换来的是
- * 图标/聚合点/数字永远同源同缩放，不会出现「对不上」的中间态。
- * ★ 数字为什么单独一层而不是画在聚合层上：L7 的文字没有背景/内边距（padding 只用在
- *   避让里），「深色实心圆 + 居中白字」只能拆成两层叠出来。
+/* ---------------- 点位符号的通用装配（单图层：emoji） ----------------
+ * 一套点位 = **1 个** L7 图层：散点和聚合点都画同一枚 emoji 位图，同一个尺寸。
+ *   · 着色：.color('#FFFFFF') 走原色分支（全彩）；给非白色则走遮罩分支
+ *     （信号灯按 state 染色、探头故障点染红，都是「整枚变色」，见 trafficIcons.js 文件头）
+ *   · 聚合桶**不再是特殊符号** —— 用户 2026-09-15 推翻了「深色实心圆 + 居中白数字」：
+ *     「深色实心圆 + 居中白数字不要，缩小后还是 emoji」。于是 -聚（圆）与 -数（白数字）
+ *     两个图层、以及配套的 scatterSize/clusterSize/countSize/COUNT_STYLE 一起删掉。
+ *     「这一撮有几个」改由**点击**给出（见下面的 onClusterClick）。
  *
- * 互斥显示（关键）：桶上不画图标、散点上不画聚合点。历史上这里踩过一个很深的坑，别改回去：
- *   ★ 曾经用 .filter('point_count', 单散点)，**它是坏的**，根因在 L7：
+ * 历史坑（保留作警示，现在的单图层写法天然不会踩）：
+ *   · 曾经用 `.filter('point_count', 单散点)` 做「桶上不画图标」，**它是坏的**：
  *     filter 会把被滤掉的记录清成 {}（getEncodedData 里一条带 shape 的记录都不剩），
  *     于是 PointLayer.getModelType()（point/index.js:190）走到「空数据」分支
  *     getModelTypeWillEmptyData()（同文件 :122）—— 那个分支只认 values 数组 / 'text' /
- *     shape2d，认不出我们这种 { field: 'zb-emoji-*' } 的图标名 ⇒ 返回 'normal'
- *     ⇒ 建出来的是**普通方块模型**（且 normal 默认 additive 混合），根本不是图片模型。
- *     现场症状：zoom15 图标位置取色 = 255,255,255（彩色图标叠在饱和的白底板上做加法还是白）；
- *     此时 getModelType() 仍报 'image'，因为它是**按当前数据**算的，而绑定的是当初用空数据
- *     建的那个方块模型 —— 所以断言 getModelType() 抓不住这个 bug（cdp-probe14 一直是假通过）。
- *     触发条件正好是默认视图：建层时 zoom9.5，camera 全是桶、散点 0 个 ⇒ filter 结果全空。
- *   改用 .size('point_count', 回调) 后每条记录都留着 shape 键 ⇒ 模型恒为 image，
- *   缩放来回穿也不会退化（实测 15→9.5→15：图标像素 8918 → 19 → 8918，模型类型始终 image）。
- *   代价：cdp-probe14 读 size 要按 point_count 取样（已同步改成读散点值与桶值两个数）。
+ *     shape2d，认不出 { field: 'zb-emoji-*' } 这种图标名 ⇒ 返回 'normal' ⇒ 建出来的是
+ *     **普通方块模型**（且 normal 默认 additive 混合），根本不是图片模型。现场症状：zoom15
+ *     图标位置取色 = 255,255,255；而 getModelType() 仍报 'image'（它按**当前数据**算，
+ *     绑定的却是当初用空数据建的方块模型）⇒ 断言 getModelType() 抓不住，probe14 长期假通过。
+ *   · 后来的补救是 `.size('point_count', 回调)`（每条记录都留着 shape 键 ⇒ 模型恒为 image）。
+ *     现在连互斥都不需要了，size 直接写常量 SYMBOL，比回调更直白。
  */
 const pointStack = (key, data) => {
   const c = ICON[key]
   const cluster = { cluster: true, clusterOptions: { radius: CLUSTER[key], maxZoom: CLUSTER.maxZoom } }
-  const mk = (suffix, dz) => new PointLayer({ id: `交通-${c.title}${suffix}`, zIndex: c.z + dz }).source(data, cluster)
-  /* 图标层与聚合层用**同一套「桶上归零 / 散点归零」**：桶上不画图标、散点上不画聚合点。
-   * 漏掉任一边的现场症状都实测过：只画不互斥时，桶位置会同时出现一枚图标和一个圆点，
-   * 散点位置也会多出一颗深色圆点（看起来像「每个点都被描了个深色底」）。 */
-  const main = mk('', 0).shape(shapeOf(key)).size('point_count', scatterSize)
-  const dot = mk('-聚', 1).shape('circle').size('point_count', clusterSize).color(c.dot).style({ opacity: 0.92 })
-  /* 桶内数字：白色、居中，压在圆点之上（zIndex 再 +1）。
-   * 取 point_count_abbreviated（supercluster 自带，≥1000 自动缩成 '1.2k'），省得自己截断；
-   * 字号仍按 point_count 的数字位数分档（见 countSize）。
-   * 文字层可以放心用 .shape(字段,'text') —— text 模型**两条分支都返回 'text'**
-   * （getModelType 认不出图标名时也兜底成 text），不像图片层那样会退化成方块。
-   * 但**必须写两参**：单参 .shape('text') 的 values 是 undefined，空数据时会掉进 'normal' 分支变方块。 */
-  const count = mk('-数', 2)
-    .shape('point_count_abbreviated', 'text')
-    .size('point_count', countSize)
-    .color('#FFFFFF')
-    .style(COUNT_STYLE)
-  const layers = [main, dot, count]
+  const main = new PointLayer({ id: `交通-${c.title}`, zIndex: c.z })
+    .source(data, cluster)
+    .shape(shapeOf(key))
+    .size(SYMBOL)
+  const layers = [main]
+
+  /* 聚合要素（supercluster 造出来的那些）的 properties 里**没有业务字段** —— 只有
+   * cluster_id / point_count / point_count_abbreviated，name/status/state 一律 undefined。
+   * 所以四层工厂的逐点弹窗必须先过这道闸，否则点桶会弹出「📹 undefined」。
+   * 判据取 cluster_id：散点是 L7 自己补的 point_count = 1（source.js:128-132），桶才有 cluster_id；
+   * point_count > 1 作兜底（万一某条路径把 cluster_id 洗掉了，数量仍是可信的）。 */
+  const isCluster = (p) => p && (p.cluster_id !== undefined || Number(p.point_count) > 1)
+
   /* 点聚合点 → 弹「这里有几个点」+ 飞到该桶并放大（聚合点的用途就是「放大看细节」）。
    * 展开级别优先用 supercluster 的 getClusterExpansionZoom（保证这桶真的散开），
    * 拿不到就退化成 +2；上限 15，免得一路飞到楼顶。
-   * 聚合层的点击载荷与图标层一样是**扁平记录**（开聚合后没有 .properties，探针 E6 实测），
-   * 桶内点数在 p.point_count 上。 */
-  const onDotClick = (e) => {
-    const p = e.feature.properties || e.feature
+   * 点击载荷是**扁平记录**（开聚合后没有 .properties，探针 E6 实测），桶内点数在 p.point_count 上。 */
+  const onClusterClick = (p) => {
     const center = p.coordinates || (p.lng != null ? [p.lng, p.lat] : null)
     if (!center || center[0] == null) return
     const n = Number(p.point_count) || 0
@@ -282,7 +252,7 @@ const pointStack = (key, data) => {
       </div>`)
     const map = sceneRef.map // L7 场景里就是 mapbox-gl 的 Map（有 easeTo/getZoom）
     if (!map || !map.easeTo) return
-    /* ★ 展开级别要 **+1**（probe16 实测出来的 bug）：点气泡时中心精确落到了桶上、zoom 却纹丝不动。
+    /* ★ 展开级别要 **+1.5**（probe16 实测出来的 bug）：点气泡时中心精确落到了桶上、zoom 却纹丝不动。
    * 原因是两套 zoom 口径差 1：
    *   · supercluster 的 getClusterExpansionZoom 返回的是**它自己那棵树的** zoom E（`getClusters(E)`
    *     就会散开，看 supercluster@7.1.5 源码就是 originZoom-1 往上试）；
@@ -292,24 +262,32 @@ const pointStack = (key, data) => {
    * `easeTo` 于是只挪了中心、一级都没放大 —— 看起来像"点了没反应"。改成 +1.5 才是真正上一级。
    * 另加一道有限性兜底：拿不到数字时退化成「当前 +2」（+1 的口径下这是保守值），至少点了有反应。
    * 上限 15 不会截断展开：maxZoom=11 ⇒ 地图 zoom ≥ 12 必定全散。 */
-  const go = (z) => {
-    const zz = Number(z)
-    const target = Number.isFinite(zz) ? zz : map.getZoom() + 2
-    map.easeTo({ center, zoom: Math.min(target, 15), duration: 600 })
+    const go = (z) => {
+      const zz = Number(z)
+      const target = Number.isFinite(zz) ? zz : map.getZoom() + 2
+      map.easeTo({ center, zoom: Math.min(target, 15), duration: 600 })
+    }
+    let ex = null
+    try {
+      const idx = main.layerSource && main.layerSource.clusterIndex
+      if (idx && p.cluster_id !== undefined) ex = idx.getClusterExpansionZoom(p.cluster_id)
+    } catch (err) { ex = null }
+    if (ex && typeof ex.then === 'function') ex.then((z) => go(Number(z) + 1.5)).catch(() => go())
+    else if (typeof ex === 'number') go(ex + 1.5)
+    else go()
   }
-  let ex = null
-  try {
-    const idx = dot.layerSource && dot.layerSource.clusterIndex
-    if (idx && p.cluster_id !== undefined) ex = idx.getClusterExpansionZoom(p.cluster_id)
-  } catch (err) { ex = null }
-  if (ex && typeof ex.then === 'function') ex.then((z) => go(Number(z) + 1.5)).catch(() => go())
-  else if (typeof ex === 'number') go(ex + 1.5)
-  else go()
-  }
-  dot.on('click', onDotClick)
-  clickable(dot)
-  clickable(main) // 图标层的点击处理器由各工厂挂（要读该图层自己的字段）
-  return { main, layers }
+
+  /* 点击路由：聚合要素走 onClusterClick，其余交给各工厂注册的业务弹窗。
+   * 工厂一律用 st.onClick(fn) 而不是 st.main.on('click', fn) —— 让这道闸**没法被绕过**
+   * （直接挂 main 的话，哪天有人加一层就顺手漏掉了聚合分支）。 */
+  const handlers = []
+  main.on('click', (e) => {
+    const p = e.feature.properties || e.feature
+    if (isCluster(p)) return onClusterClick(p)
+    for (const h of handlers) h(e)
+  })
+  clickable(main)
+  return { main, layers, onClick: (fn) => handlers.push(fn) }
 }
 
 const layerFactories = {
@@ -323,7 +301,9 @@ const layerFactories = {
      * 不再调 .active({color})：它会把彩色图标整枚染成高亮色（原色分支的前提是图层色＝白）。
      * 「可点击」的反馈改由光标承担（见 clickable）。 */
     st.main.color('status', (s) => (s === 'fault' ? c.faulty : '#FFFFFF'))
-    st.main.on('click', (e) => {
+    /* 用 st.onClick 而不是 st.main.on('click')：聚合桶由 pointStack 统一接管（弹「合并了几个」+
+     * 放大），只有真散点才会进到这里 —— 否则桶上读到的 name/status 全是 undefined。 */
+    st.onClick((e) => {
       /* 开聚合后点击载荷是**扁平记录**（L7 把 cluster 的要素摊平了，没有 .properties；
        * 探针 E6 用真鼠标事件验过 payload 里 lng/lat/name 都直接可取）。兼容两种形态，弹窗逻辑不变。 */
       const p = e.feature.properties || e.feature
@@ -344,7 +324,7 @@ const layerFactories = {
      * 红/绿/黄/灰四色的信号灯剪影，红绿在地图上一眼分得开。
      * 这一层是四层里唯一不显示彩色 emoji 的层 —— 彩色位图改不了色，而「红绿区分」是硬需求。 */
     st.main.color('state', (s) => c.state[s] || c.state.fault)
-    st.main.on('click', (e) => {
+    st.onClick((e) => {
       const p = e.feature.properties || e.feature
       const stateMap = { green: '绿灯', red: '红灯', yellow: '黄灯', fault: '故障' }
       showPopup([p.lng, p.lat], `
@@ -361,7 +341,7 @@ const layerFactories = {
     /* 警员用 👮 的**原色**（.color('#FFFFFF') 走原色分支）：用户要求「统一改成蓝色」，
      * 👮 本身就是深蓝制服 + 蓝帽，比上一版自定义的品红更贴语义。 */
     st.main.color('#FFFFFF')
-    st.main.on('click', (e) => {
+    st.onClick((e) => {
       const p = e.feature.properties || e.feature
       showPopup([p.lng, p.lat], `
         <div style="min-width:150px">
@@ -438,7 +418,7 @@ const layerFactories = {
     const st = pointStack('busStop', clipPoints(pointFC('bus_stops', rows('bus_stops'))))
     // 原色分支：🚏 站牌本身的颜色（实测样点最远 254m，裁剪对公交站等于没裁）
     st.main.color('#FFFFFF')
-    st.main.on('click', (e) => {
+    st.onClick((e) => {
       const p = e.feature.properties || e.feature
       showPopup(evLngLat(e), `
         <div style="min-width:140px">
@@ -510,7 +490,7 @@ export function setTrafficLayerVisible(name, visible) {
     if (!item.layer) {
       mount(item, layerFactories[name]())
     } else {
-      for (const l of item.group) l.show() // 点位层是一组 3 个（图标 + 聚合点 + 数字），整组显隐
+      for (const l of item.group) l.show() // 点位层是一组（现在只有 1 个 emoji 图标层），整组显隐
     }
   } else {
     for (const l of item.group) l.hide()

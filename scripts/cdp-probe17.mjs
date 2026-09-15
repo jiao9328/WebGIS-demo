@@ -1,13 +1,15 @@
 /* 定向回归：2026-09-15 用户十条符号系统改动的验收（v4 emoji 版）。
  *
  * 覆盖：
- *   A 点位符号装配 —— 形状名 / 尺寸（散点 9、桶 0）/ 用色 / **绑定**的是图片模型
+ *   A 点位符号装配 —— 形状名 / 尺寸（四层统一 9px 常量）/ 用色 / **绑定**的是图片模型
  *   B 烤出来的位图本体 —— 把 __traffic.emoji(k) 的 data URL 拿到 Node 侧解码：
  *     墨迹占比（真烤出 emoji 了没）、遮罩模式是不是「纯白底 + 状态色挖洞」
  *   C 裁剪 —— 图层要素数 == 用**独立实现**在 Node 侧重算的「离路网 ≤500m」行数
  *   D 悬停光标 —— 进要素 pointer、出要素收回；隐藏图层也收回（第 7 条）
  *   E 道路图层变细 + 建筑 sweep 动画已删（第 8 条）
  *   F 大屏数据同源 + 点行 → 缩放到对应（第 9 条）
+ *   H 聚合桶像素 —— hide/show 差分取墨迹掩膜，证明桶上画的是与散点**同一枚、同一尺寸**的
+ *     emoji（用户 2026-09-15：「深色实心圆 + 居中白数字不要，缩小后还是 emoji」）
  *
  * ★ 本文件**不 import src/ 下的模块**：那些模块走 vite 的 '@' 别名 + 依赖 @antv/l7，
  *   Node 直接 import 会解析失败（probe14 只 import 了无依赖的 trafficIcons.js 才能跑）。
@@ -142,38 +144,23 @@ ws.onopen = async () => {
         if (o.values!==undefined) return {field:o.field, values:o.values}
         return o.field}
       const sz=a.size
-      const sizeP=(sz&&typeof sz.values==='function')?{field:sz.field,散点:sz.values(1),桶:sz.values(2)}:null
+      /* 尺寸现在是**常量** .size(SYMBOL)：散点和聚合点画同一个大小（用户 2026-09-15「缩小后还是 emoji」）。
+       * 常量写法下 L7 把值直接放在 attributes 上（无 field），取出来就是个数。 */
+      const sizeP=(sz&&typeof sz.values!=='function')?(sz.values!==undefined?sz.values:sz.field):null
       const m=(l.models||[])[0]; const us=m?Object.keys(m.uniforms||{}):[]
       const d=l.layerSource&&l.layerSource.originData
-      /* 第三层（桶内数字）单独读：字号分档回调要按 1/2/99/100 四个点取，还要它的文本字段与样式。 */
-      const c=(it.group||[])[2]
-      const ca=(c&&c.configService&&c.configService.getAttributeConfig(c.id))||{}
-      const csz=ca.size, csh=ca.shape
-      const numP=csz?{field:csz.field, 单点:csz.values(1), 两点:csz.values(2), 两位:csz.values(99), 三位:csz.values(100)}:null
       return JSON.stringify({组件数:(it.group||[]).length,
         shape:(l.shapeOption&&l.shapeOption.field)||val('shape'), sizeP, color:val('color'),
-        数字层: c?{文本字段:(csh&&csh.field)||null, 类型:(csh&&csh.values)||null, 尺寸:numP,
-                  样式:c.rawConfig||null, 色:ca.color?(ca.color.values!==undefined?ca.color.values:ca.color.field):null}:null,
         块数:(d&&d.features||[]).length, 模型: m?m.constructor.name:'无',
         u_texture: us.indexOf('u_texture')>=0 && us.indexOf('u_textSize')>=0})})()`)
     info(n, r)
     if (!r || r.err) { check(false, `${n} 图层实例存在`, r); continue }
     check(r.shape === ICONS[n].id, `${n} 形状名 = ${ICONS[n].id}`, r.shape)
-    check(r.组件数 === 3, `${n} 一套点位 = 3 个 L7 图层（图标 + 聚合点 + 桶内数字）`, r.组件数)
-    check(r.sizeP && r.sizeP.散点 === SYMBOL && r.sizeP.桶 === 0,
-      `${n} 尺寸：散点 ${SYMBOL}px / 聚合桶 0（互斥显示，缩小时不变大）`, r.sizeP)
-    /* 桶内数字层：文本取 supercluster 自带的 point_count_abbreviated（≥1000 自动缩写），
-     * 字号分档（≥100 降 8px 免得三位数撑破 18px 的圆），且单点时必须返 0（散点上不画数字）。 */
-    const nl = r.数字层
-    check(nl && nl.文本字段 === 'point_count_abbreviated' && nl.类型 === 'text',
-      `${n} 数字层取 point_count_abbreviated 当文本`, { 字段: nl && nl.文本字段, 类型: nl && nl.类型 })
-    check(nl && nl.尺寸 && nl.尺寸.单点 === 0 && nl.尺寸.两点 === 10 && nl.尺寸.三位 === 8 && nl.尺寸.两位 === 10,
-      `${n} 字号分档：单点 0（不画）/ 1~2 位 10px / 3 位 8px`, nl && nl.尺寸)
-    /* .style({...}) 不会落在 layer.styleOption 上 —— 实测落在 **layer.rawConfig**（L7 没有
-     * 暴露 style 的取值接口），所以这里读 rawConfig。 */
-    check(nl && nl.样式 && nl.样式.textAllowOverlap === true && nl.样式.textAnchor === 'center',
-      `${n} 数字样式：关避让（否则密集处整批丢字）+ 锚点居中`, nl && nl.样式)
-    check(nl && String(nl.色).toUpperCase() === '#FFFFFF', `${n} 数字色 = 纯白`, nl && nl.色)
+    /* 单图层：用户 2026-09-15 推翻了「深色实心圆 + 居中白数字」，-聚 / -数 两层删掉，
+     * 缩小时的聚合桶直接照画同一枚 emoji。 */
+    check(r.组件数 === 1, `${n} 一套点位 = 1 个 L7 图层（只有 emoji 图标层）`, r.组件数)
+    check(r.sizeP === SYMBOL,
+      `${n} 尺寸 = ${SYMBOL}px 常量（散点与聚合桶同一个大小，不随点数变）`, r.sizeP)
     check(r.u_texture === true, `${n} **绑定**的模型是图片模型（着色器带 u_texture + u_textSize）`, { 模型: r.模型, u_texture: r.u_texture })
     check(r.块数 > 0, `${n} 图层有数据（${r.块数} 个要素）`, r.块数)
     const got = r.color && r.color.byValue
@@ -400,137 +387,164 @@ ws.onopen = async () => {
     check(roadPx > 0, '同屏能看到底图路网（不是一片空白）', roadPx)
   }
 
-  /* ================= H 桶的渲染像素（本次核心证据） =================
-   * A 段只能证明「数字层配好了」，配好了不等于**画出来了、画对了**（L7 的坑见文件头：
-   * 同一份配置在空数据分支上会建成方块模型，断言配置名照样全绿）。
-   * 这里只认像素，而且要和**真值**对上：从活索引取桶的经纬度 → 投到屏幕 →
-   *   ① 该处真有一个该层圆色的**实心圆**，直径 ≈ DOT 换算出来的 18px；
-   *   ② 圆内白色墨迹的**连通块个数 == 真值 point_count 的位数**。
-   * ② 是关键：数字画错（比如恒定画成「2」）或压根没画，字数立刻对不上。
-   * 为什么不用识图复核数字：vision.js 把四个桶全读成「2」（连 6 也读成 2），
-   * 小字形上它不可信，见 [[vision-js-limits]]。 */
-  console.log('\n===== H 聚合桶像素复核（实心圆直径 + 桶内白数字与真值位数一致） =====')
-  const DOT = Number(/const DOT = (\d+)/.exec(SRC('tools/initTrafficLayers.js'))[1])
-  info('源码 DOT（聚合点 size）', DOT)
+  /* ================= H 聚合桶的渲染像素（本次核心证据） =================
+   * A 段只能证明「配置是这么写的」，写对了不等于**画出来了、画的是那个东西**
+   * （L7 的坑见文件头：同一份配置在空数据分支上会建成方块模型，断言配置名照样全绿）。
+   *
+   * 用户 2026-09-15 的诉求：「深色实心圆 + 居中白数字不要，缩小后还是 emoji」。
+   * 所以这里要证的是**桶和散点画的是同一枚 emoji、同一个尺寸**，验法是像素级的等价判定：
+   *   ① 把 camera 层整层 hide 一帧再 show 一帧，两张截图的差 = 这一层画上去的**墨迹掩膜**
+   *      （底图、路网、其它图层在两张图里逐像素相同，差分里一个点都不剩）。
+   *      这样拿到的是「这一层到底画了什么形状」，不需要猜背景色、也不用管底图深浅。
+   *   ② 取一个**散点**的掩膜当基准，取若干**聚合桶**的掩膜，在 ±2px 内平移对齐后算 IoU。
+   *      是同一枚 emoji ⇒ IoU 高；退回上一版的实心圆 ⇒ 形状根本不同，IoU 立刻塌。
+   *   ③ 墨迹面积：同一枚 emoji 在桶上和散点上必须基本相等（差 <15%）。
+   *      顺便记下实心圆的理论面积（半径 9 ⇒ πr² ≈ 254px）作对照 —— emoji 的墨迹只有一半左右。
+   * 为什么不用识图判：vision.js 在小字形上不可信（把四个桶全读成「2」），见 [[vision-js-limits]]。 */
+  console.log('\n===== H 聚合桶像素复核（桶上画的是不是与散点同一枚 emoji） =====')
   /* 只留 camera 一层：低 zoom 下四层的桶会塌在市中心同一小片互相压边，
-   * 一个窗口里混进四种圆色，连通块必然碎（这条是量出来的，不是猜的）。 */
+   * 差分里会混进别的层的墨迹（这条是量出来的，不是猜的）。 */
   for (const k of POINTS) await ev(`window.__traffic.setVisible(${JSON.stringify(k)}, ${k === 'camera'})`)
+  /* 动态车辆（DOM marker）与底图道路流线要一并关掉：它们是**动的**，两张截图之间
+   * 会自己变样，差分里就混进了与本次改动无关的像素（第一次跑就是这么假红的）。
+   * 底图是 L7 里另一个图层，不在 camera 的 group 里，hide/show camera 影响不到它。 */
+  await ev(`(()=>{try{window.__traffic.setVisible('vehicle', false)}catch(e){}
+    try{const r=window.__base.get('淄博道路'); r&&r.hide()}catch(e){}
+    return 1})()`)
   await sleep(900)
   /* 11.3 = 「整条路网刚好铺满屏幕」那一级，也正是用户 2026-09-15 说的
    * 「缩放到看到整个道路网时，也要能看到几十个点数据」。 */
   await ev(`(()=>{window.__map.jumpTo({center:[118.037,36.813],zoom:11.3,pitch:0});return 'ok'})()`)
   await sleep(1600)
+  /* 取要素：桶（n>1）和散点（n=1）都要，且必须满足两条 ——
+   *   · **孤立**：到同层最近邻 ≥22px，贴在一起的两个符号会在同一个 21×21 窗口里重叠；
+   *   · **没被 UI 浮层盖住**：中心 + 四角命中到的元素都得落在**地图容器内**。
+   *     第一版跑挂了两次，都是这条惹的：
+   *       ⓐ 一开始压根没做遮挡检查，取到的散点在 (1082,57) 被顶部导航栏压着，
+   *         差分当然是 0，看起来就像「emoji 没画出来」；
+   *       ⓑ 改成判 `tagName === 'CANVAS'` 之后**所有**点都被判成被盖住（桶数直接归零）——
+   *         因为 L7 自己的 canvas 是 `pointer-events:none`，命中的永远是它上面那层
+   *         `DIV.l7-marker-container`（在容器内，属于地图自己的浮层，**不算**被盖）。
+   *     所以判据是「在地图容器内」而不是「是不是 canvas」，实测过两条都是必要的。 */
   const bk = await evj(`(()=>{const it=window.__traffic.registry.camera
     const l=it&&it.layer, idx=l&&l.layerSource&&l.layerSource.clusterIndex
     if(!idx) return JSON.stringify({err:'no-index'})
     const b=window.__map.getBounds(), t=Math.floor(window.__map.getZoom()-1)
     const cl=idx.getClusters([b.getWest(),b.getSouth(),b.getEast(),b.getNorth()],t)
-    const all=[], list=[]
+    const W=window.innerWidth, H=window.innerHeight, all=[], buckets=[], dots=[]
+    let 视图内桶=0, 视图内散=0, 被盖=0
+    const cont=window.__map.getContainer()
+    const clean=(x,y)=>{const o=document.elementFromPoint(x,y); return !!o && (o===cont||cont.contains(o))}
+    const clearAll=(x,y)=>clean(x,y)&&clean(x-10,y)&&clean(x+10,y)&&clean(x,y-10)&&clean(x,y+10)
     for(const f of cl){const n=(f.properties&&f.properties.point_count)||1
       const c=f.geometry.coordinates, p=window.__map.project([c[0],c[1]])
-      const pt={x:p.x,y:p.y}; all.push(pt)
-      if(n>1) list.push({n:n,abbr:f.properties.point_count_abbreviated,x:pt.x,y:pt.y})}
+      const o={x:p.x,y:p.y,n:n,abbr:f.properties.point_count_abbreviated,status:f.properties.status}
+      all.push(o)
+      if(o.x<20||o.y<20||o.x>W-20||o.y>H-20) continue
+      if(n>1) 视图内桶++; else 视图内散++
+      if(!clearAll(Math.round(o.x),Math.round(o.y))){被盖++;continue}
+      if(n>1) buckets.push(o); else if(o.status!=='fault') dots.push(o)}
     const near=(a)=>{let best=1e9
       for(const o of all){if(o.x===a.x&&o.y===a.y)continue
         const d=Math.hypot(o.x-a.x,o.y-a.y); if(d<best)best=d}
       return best}
-    for(const a of list) a.iso=near(a)
-    return JSON.stringify({t:t, 要素数:cl.length, 桶数:list.length, 散点数:cl.length-list.length, list:list})})()`)
-  info('整网视图（zoom 11.3）camera 层', bk && { 树zoom: bk.t, 桶数: bk.桶数, 散点数: bk.散点数, 视图内要素: bk.要素数 })
+    for(const a of buckets) a.iso=near(a)
+    for(const a of dots) a.iso=near(a)
+    return JSON.stringify({t:t, 要素数:cl.length, 视图内桶:视图内桶, 视图内散:视图内散, 被浮层盖住:被盖,
+      桶数:buckets.length, 散点数:dots.length,
+      孤立桶:buckets.filter(o=>o.iso>=22).length, 孤立散点:dots.filter(o=>o.iso>=22).length,
+      桶:buckets.filter(o=>o.iso>=22).sort((a,b)=>b.iso-a.iso).slice(0,6),
+      散点:dots.filter(o=>o.iso>=22).sort((a,b)=>b.iso-a.iso).slice(0,3)})})()`)
+  info('整网视图（zoom 11.3）camera 层', bk && {
+    树zoom: bk.t, 视图内要素: bk.要素数, 视图内桶: bk.视图内桶, 视图内散: bk.视图内散,
+    被浮层盖住: bk.被浮层盖住, 可用桶: bk.桶数, 可用散点: bk.散点数,
+    孤立桶: bk.孤立桶, 孤立散点: bk.孤立散点
+  })
   check(bk && bk.要素数 >= 30,
     `整条路网铺满屏幕时能看到「几十个」点数据（实际 ${bk && bk.要素数} 个）`, bk && bk.要素数)
-  if (!bk || bk.err || !bk.list.length) {
-    check(false, 'camera 层在整网视图有聚合桶可取样', bk)
+  if (!bk || bk.err || !(bk.桶 || []).length || !(bk.散点 || []).length) {
+    check(false, 'camera 层在整网视图同时有未被遮挡的孤立桶与散点可取样', bk)
   } else {
-    /* 取样优先挑**最孤立 + 两位数**的桶：两位数才验得到「多字形」，
-     * 孤立才不会被邻座笔画污染（测过：贴在一起的桶会让连通块数假红）。 */
-    const two = bk.list.filter((b) => b.n >= 10 && b.n < 100).sort((a, b) => b.iso - a.iso)
-    const pick = two[0] || bk.list.slice().sort((a, b) => b.iso - a.iso)[0]
-    const 图色 = await evj(`(()=>{const it=window.__traffic.registry.camera
-      const l=it&&it.group&&it.group[1]
-      const a=(l&&l.configService&&l.configService.getAttributeConfig(l.id))||{}
-      return JSON.stringify(a.color?(a.color.values!==undefined?a.color.values:a.color.field):null)})()`)
-    info(`取样桶：真值 ${pick.n} 点、最近邻 ${pick.iso.toFixed(0)}px @屏幕(${pick.x.toFixed(0)},${pick.y.toFixed(0)})，圆色 ${图色}`, pick.abbr)
-    const hex2rgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(h)); return m ? [1, 3, 5].map((i) => parseInt(m[1].slice(i - 1, i + 1), 16)) : null }
-    const dot = hex2rgb(图色)
-    const shot = await send('Page.captureScreenshot', { format: 'png' })
-    const img = decodePNG(Buffer.from(shot.data, 'base64'))
-    const px = (x, y) => { const i = (y * img.width + x) * 4; return [img.rgba[i], img.rgba[i + 1], img.rgba[i + 2]] }
-    /* 找桶：必须同时钳在窗口内 + 贴近该层圆色。只用「深且饱和」判会顺着底图漫出去
-     * （第一版量出 80×93 的「圆」），钳窗口而不钳颜色则会漫到整屏。 */
-    const cx0 = Math.round(pick.x), cy0 = Math.round(pick.y), HALF = 13
-    const inWin = (x, y) => x >= cx0 - HALF && x <= cx0 + HALF && y >= cy0 - HALF && y <= cy0 + HALF
-    const isDot = (x, y) => inWin(x, y) && x >= 0 && y >= 0 && x < img.width && y < img.height &&
-      (px(x, y)[0] + px(x, y)[1] + px(x, y)[2]) / 3 < 150 &&
-      Math.abs(px(x, y)[0] - dot[0]) + Math.abs(px(x, y)[1] - dot[1]) + Math.abs(px(x, y)[2] - dot[2]) < 90
-    const seen = new Set(), blobs = []
-    for (let y = cy0 - HALF; y <= cy0 + HALF; y++) for (let x = cx0 - HALF; x <= cx0 + HALF; x++) {
-      if (seen.has(x + ',' + y) || !isDot(x, y)) continue
-      const st = [[x, y]], cells = []
-      seen.add(x + ',' + y)
-      while (st.length) {
-        const [ax, ay] = st.pop(); cells.push([ax, ay])
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          if (seen.has((ax + dx) + ',' + (ay + dy)) || !isDot(ax + dx, ay + dy)) continue
-          seen.add((ax + dx) + ',' + (ay + dy)); st.push([ax + dx, ay + dy])
-        }
-      }
-      blobs.push(cells)
+    /* ①②：hide / show 两张图求差 → 墨迹掩膜。差分阈值取 30（sum-abs）：
+     * 低于它的只有画布噪声（实测两张无变化截图的自差是 0，L7 的 canvas 没有抖动）。 */
+    const shot = async () => decodePNG(Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
+    /* 先干净地藏一层：setVisible 会走 show()/hide()，clusters 索引不动，回来时形状一致 */
+    const grab = async () => {
+      await ev(`window.__traffic.setVisible('camera', false)`)
+      await sleep(700)
+      const off = await shot()
+      await ev(`window.__traffic.setVisible('camera', true)`)
+      await sleep(900)
+      const on = await shot()
+      return { off, on }
     }
-    blobs.sort((a, b) => b.length - a.length)
-    const cells = blobs[0] || []
-    let sx = 0, sy = 0, bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9
-    for (const [x, y] of cells) { sx += x; sy += y; bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y) }
-    const mx = sx / cells.length, my = sy / cells.length
-    const 直径 = 2 * Math.sqrt(cells.length / Math.PI)
-    info('桶的连通块', { 面积: cells.length, 外接盒: `${bx1 - bx0 + 1}×${by1 - by0 + 1}`, 直径: +直径.toFixed(1), 质心: [+mx.toFixed(1), +my.toFixed(1)] })
-    check(cells.length > 0, `取样点处画出了圆色实心块（该层圆色 ${图色}）`, cells.length)
-    check(直径 >= 16.5 && 直径 <= 20,
-      `桶是实心圆而不是被底图切碎的形状（连通块直径 ${直径.toFixed(1)}px，DOT=${DOT} ⇒ 屏幕 2×${DOT}=${2 * DOT}px，图标方框 18px）`, +直径.toFixed(1))
-    const 心 = px(Math.round(mx), Math.round(my))
-    check(Math.abs(心[0] - dot[0]) + Math.abs(心[1] - dot[1]) + Math.abs(心[2] - dot[2]) < 200,
-      `圆心处就是该层圆色（取到 ${心.join(',')}，规范 ${dot.join(',')}）—— 不是别的层或底图`, 心)
-    /* 数字：框取横 ±8 / 纵 ±6（矩形，不是圆盘 —— 圆的抗锯齿边缘叠浅色底图会混出一圈
-     * 「亮而不饱和」，用圆盘取样时它分裂成好几个碎块，把「103」数成 5 个字）。
-     * 判据用「离白近还是离圆色近」，不能用绝对亮度阈值：8px 档的笔画只有 ~1px 宽，
-     * 整根都跟圆面混着，永远到不了纯白，阈值判定会把它切碎。 */
-    const isGlyph = (x, y) => {
-      const p = px(x, y)
-      return Math.abs(p[0] - 255) + Math.abs(p[1] - 255) + Math.abs(p[2] - 255) <
-        Math.abs(p[0] - dot[0]) + Math.abs(p[1] - dot[1]) + Math.abs(p[2] - dot[2])
-    }
-    const gset = new Set()
-    for (let y = Math.round(my) - 6; y <= Math.round(my) + 6; y++) {
-      for (let x = Math.round(mx) - 8; x <= Math.round(mx) + 8; x++) {
-        if (x < 0 || y < 0 || x >= img.width || y >= img.height) continue
-        if ((x - mx) ** 2 + (y - my) ** 2 > ((bx1 - bx0 + 1) / 2) ** 2) continue // 圆外
-        if (isGlyph(x, y)) gset.add(x + ',' + y)
+    const { off, on } = await grab()
+    /* 先量一个**总量**：两张图在整屏范围内的差异像素。它应该 ≈ 画出来的符号数 × 单枚墨迹
+     * （几十个符号 ⇒ 几千到两万）。要是几十万，说明还有别的东西在动（底图流线没关干净、
+     * 浮层里有动画），那种差分不能用来判形状 —— 这一步就是为了让「假红」自己暴露出来。 */
+    let 全屏差分 = 0
+    for (let y = 0; y < Math.min(off.height, on.height); y++) {
+      for (let x = 0; x < Math.min(off.width, on.width); x++) {
+        const i = (y * off.width + x) * 4, j = (y * on.width + x) * 4
+        if (Math.abs(off.rgba[i] - on.rgba[j]) + Math.abs(off.rgba[i + 1] - on.rgba[j + 1]) + Math.abs(off.rgba[i + 2] - on.rgba[j + 2]) > 30) 全屏差分++
       }
     }
-    const gseen = new Set(), comps = []
-    for (const k0 of gset) {
-      if (gseen.has(k0)) continue
-      const [ax, ay] = k0.split(',').map(Number)
-      const st = [[ax, ay]], grp = []
-      gseen.add(k0)
-      while (st.length) {
-        const [x, y] = st.pop(); grp.push([x, y])
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-          const kk = (x + dx) + ',' + (y + dy)
-          if (!gset.has(kk) || gseen.has(kk)) continue
-          gseen.add(kk); st.push([x + dx, y + dy])
-        }
+    info('hide/show 差分的全屏差异像素', { 全屏差分, 画布: `${off.width}×${off.height}`, 参考_单枚屏幕墨迹约: 200 })
+    /* 参考量级：18px 的 📹 位图本身墨迹占 49.5%（≈160px），屏幕上的差分会把抗锯齿外缘
+     * （半透明、与底图混色）一并算进来，实测每枚 ≈200px。视图内有 50 来个要素 ⇒ 约 1 万。 */
+    check(全屏差分 > 0 && 全屏差分 < 60000,
+      `差分里只有 camera 层自己的墨迹（${全屏差分}px，量级对得上；几十万说明有别的动画在动）`, 全屏差分)
+    check(off.width === on.width && off.height === on.height, '两次截图的画布尺寸一致（差分可比）', [off.width, on.width])
+    const at = (img, x, y) => { const i = (y * img.width + x) * 4; return [img.rgba[i], img.rgba[i + 1], img.rgba[i + 2]] }
+    const R = 10 // 取样半径：屏幕 21×21 的窗口，装得下 18px 的 emoji 方框 + 抗锯齿余量
+    /* 掩膜 = 该窗口内「这一层画上去的像素」的集合（坐标用窗口内相对量，便于平移对齐） */
+    const maskAt = (c) => {
+      const cx = Math.round(c.x), cy = Math.round(c.y), m = new Set()
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+        const x = cx + dx, y = cy + dy
+        if (x < 0 || y < 0 || x >= off.width || y >= off.height) continue
+        const a = at(on, x, y), b = at(off, x, y)
+        if (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) > 30) m.add(dx + ',' + dy)
       }
-      /* <3px 的抗锯齿碎点不是笔画（见上：圆边缘的浅色残留会漏进来） */
-      if (grp.length >= 3) comps.push(grp.length)
+      return m
     }
-    const 期望 = String(pick.abbr != null ? pick.abbr : pick.n).replace(/[^0-9a-z.]/gi, '').length
-    info('桶内白字连通块', { 个数: comps.length, 各块面积: comps })
-    check(comps.length === 期望,
-      `桶内白数字的位数 == 真值「${pick.abbr}」（${期望} 位；实测 ${comps.length} 个连通字形）—— 数字真画出来了，且不是别的数`, { 真值: pick.n, 字形数: comps.length })
-    check(comps.every((a) => a >= 3), '没有把圆的抗锯齿边缘误认成笔画', comps)
-    /* 对照：整网视图下散点符号（emoji）也得还在，不能只剩桶 */
-    info('整网视图散点数', bk.散点数)
+    const 参考 = maskAt(bk.散点[0])
+    info(`散点基准掩膜 @屏幕(${bk.散点[0].x.toFixed(0)},${bk.散点[0].y.toFixed(0)})`, {
+      墨迹像素: 参考.size, 最近邻: +bk.散点[0].iso.toFixed(0),
+      对照_实心圆理论面积: +((Math.PI * SYMBOL * SYMBOL).toFixed(0))
+    })
+    check(参考.size > 60, `散点基准处确实画了符号（墨迹 ${参考.size}px；18px 实心圆的理论面积是 ${Math.round(Math.PI * SYMBOL * SYMBOL)}px）`, 参考.size)
+    /* IoU（平移对齐版）：把它整体平移到 ±2px 里最合的落点再算交并比 */
+    const iou = (a, b) => {
+      let best = 0
+      for (let sx = -2; sx <= 2; sx++) for (let sy = -2; sy <= 2; sy++) {
+        let inter = 0
+        for (const k of a) { const [x, y] = k.split(',').map(Number); if (b.has((x + sx) + ',' + (y + sy))) inter++ }
+        const union = a.size + b.size - inter
+        if (union > 0 && inter / union > best) best = inter / union
+      }
+      return best
+    }
+    const 桶结果 = bk.桶.map((b) => {
+      const m = maskAt(b)
+      return { 真值: b.n, 缩写: b.abbr, 墨迹: m.size, 最近邻: +b.iso.toFixed(0), 与散点IoU: +iou(m, 参考).toFixed(2) }
+    })
+    info('聚合桶掩膜 vs 散点掩膜', 桶结果)
+    const 空桶 = 桶结果.filter((r) => r.墨迹 === 0)
+    check(空桶.length === 0,
+      `每个聚合桶上都真画了符号（${桶结果.length} 个桶，无一是空的）——「缩小后 emoji 丢失」没有再犯`, 空桶)
+    const 低IoU = 桶结果.filter((r) => r.与散点IoU < 0.75)
+    check(低IoU.length === 0,
+      `桶上画的形状与散点**逐像素同形**（IoU 最小 ${Math.min(...桶结果.map((r) => r.与散点IoU)).toFixed(2)}，实心圆/方块/文字都会远低于 0.75）`, 低IoU)
+    /* ③ 尺寸：桶与散点的墨迹面积必须基本相等（同一枚 emoji、同一个 SYMBOL）。
+     * 上一版桶是 14.4px 的圆（面积 163）、图标是 18px 方框，两者差得远；
+     * 这一版若有人把桶改回「随点数变大的气泡」，面积差也会立刻暴露。 */
+    const 桶面积 = 桶结果.map((r) => r.墨迹)
+    const 均桶 = 桶面积.reduce((a, b) => a + b, 0) / 桶面积.length
+    const 偏差 = Math.max(...桶面积.map((a) => Math.abs(a - 参考.size) / 参考.size))
+    info('墨迹面积对照', { 散点: 参考.size, 桶均值: +均桶.toFixed(1), 桶各自: 桶面积, 最大偏差: +(偏差 * 100).toFixed(1) + '%' })
+    check(偏差 <= 0.15,
+      `桶的符号与散点**等大**（散点 ${参考.size}px，桶最大偏差 ${(偏差 * 100).toFixed(1)}% ≤15%）——尺寸不随桶内点数变`, { 桶面积, 散点: 参考.size })
   }
 
   const errs = await evj(`JSON.stringify((window.__errs||[]).slice(0,6))`)
