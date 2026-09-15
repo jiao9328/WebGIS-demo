@@ -2,13 +2,20 @@
  * 智慧交通图层模块（L7）
  *
  * 7 类交通图层懒创建注册表：首次显示才 scene.addLayer，之后 show/hide 复用实例。
- *   camera       监控探头（摄像头图标，正常 #7C4DFF 紫 / 故障 #F04438 红）
- *   trafficLight 信号灯（红绿灯图标，state 四色 green/red/yellow/fault）
- *   police       警员分布（警员图标 #E2447E，onDuty 在勤/休班）
+ *   camera       监控探头（📹 emoji，原色；故障点整枚染红 #F04438）
+ *   trafficLight 信号灯（🚦 emoji 剪影，state 四色 green/red/yellow/fault）
+ *   police       警员分布（👮 emoji，原色＝深蓝制服；blue 是用户指定色）
  *   busRoute     公交线路（LineLayer 青绿，无动画）
  *   congestion   道路拥堵（真实路名 → 本地路网几何匹配，三色分级）
  *   heat         交通热力（HeatmapLayer 绿→黄→橙→红）
- *   busStop      公交站点（公交车图标 #EF6820）
+ *   busStop      公交站点（🚏 emoji，原色）
+ *
+ * 两条全局口径（用户 2026-09-15 提的第 1/2/6 条）：
+ *   · **符号一律 18px**（SYMBOL=9，L7 的 size 是半径），与动态车辆的 22px 盒子同一量级
+ *     （车形 SVG 的墨迹只有 17.6px，所以两者视觉等大）；聚合点与图标**同一个尺寸** ——
+ *     上一版聚合气泡会随桶内点数涨到 22px，缩小反而变大，正是用户说的「滚轮向下缩小时符号变大」。
+ *   · **裁剪**：点位/线路都只画落在大路网 MAX_M 范围内的要素，见 tools/roadCoverage.js
+ *     （用户拍板「只裁地图图层」，库表/大屏 KPI 仍是全量）。
  * building/mainRoad 为桥接别名：控制基础图层（城市建筑/道路流线）
  *
  * 数据源：SQL Server（后端 /api/mapdata → store.dbData），不再是本地 JSON/mock。
@@ -23,9 +30,10 @@
 import { PointLayer, LineLayer, HeatmapLayer, Popup } from '@antv/l7'
 import roadData from '@/assets/GIS_Data/Zibo_roads.json'
 import { baseLayerMap } from './initLayer'
-import { TRAFFIC_ICONS, BADGE_IMAGES, iconUrl } from './trafficIcons'
+import { TRAFFIC_ICONS, emojiDataUrl } from './trafficIcons'
 import { store } from '../store'
 import { pointFC, routeFC, layerProps } from './dbAdapter'
+import { clipPoints, clipLines } from './roadCoverage'
 import { setVehicleVisible } from './vehicleSim' // 动态车辆为前端模拟层（marker），开关委托它统一管理
 
 /* ---------------- 本地路网索引（仅供拥堵按路名匹配几何，模块加载时一次） ---------------- */
@@ -63,43 +71,67 @@ const showPopup = (lngLat, html) => {
 }
 const evLngLat = (e) => (e.lngLat ? [e.lngLat.lng, e.lngLat.lat] : [118.05, 36.81])
 
+/* 悬停光标：图层上的要素「可点击」时，把 mapbox 默认的抓取手（grab，用户形容为「四处抓的小白手」）
+ * 换成 pointer（用户 2026-09-15 第 7 条）。
+ * L7 的 mouseenter/mouseleave 是**按要素**触发的，进出要素各切一次光标。
+ * 离开时恢复成 '' 而不是写死 'grab'：光标本体的规则挂在 canvas 容器上（mapbox-gl.css 的
+ * .mapboxgl-canvas-container.mapboxgl-interactive），交回它管，拖拽/缩放时该显示的手势才不会被打乱。 */
+const clickable = (layer) => {
+  const set = (v) => {
+    const cv = sceneRef && sceneRef.map && sceneRef.map.getCanvas && sceneRef.map.getCanvas()
+    if (cv) cv.style.cursor = v
+  }
+  layer.on('mouseenter', () => set('pointer'))
+  layer.on('mouseleave', () => set(''))
+}
+
+/* 图层隐藏时把光标收回默认值：鼠标正停在要素上时关掉图层，mouseleave 不会再触发，
+ * 光标会一直留在 pointer 上（悬停在空地图上却显示可点击）。 */
+const resetCursor = () => {
+  const cv = sceneRef && sceneRef.map && sceneRef.map.getCanvas && sceneRef.map.getCanvas()
+  if (cv && cv.style.cursor === 'pointer') cv.style.cursor = ''
+}
+
 /* ---------------- 图层图标规范 ----------------
- * 一个图层一套「专属图标 + 专属色」，目标是扫一眼地图就知道那是什么图层：
+ * 一个图层一套「专属符号 + 专属色」，目标是扫一眼地图就知道那是什么图层：
  *
- *   图层        图标                主色       怎么认
- *   监控探头    摄像头（机身+镜头）  #7C4DFF    故障转 #F04438 红
- *   信号灯      红绿灯（三灯箱）    #12B76A    状态四色 绿/红/黄/故障灰
- *   警员分布    警徽（盾+星）       #E2447E
- *   公交站点    公交车（车身+轮）   #EF6820
- *   公交线路    线                 #0E9AA7    青绿实线
- *   道路拥堵    线                 红/橙/黄   语义三色（分严重/中度/轻度，不改）
- *   动态车辆    —                  专属色     车形 SVG（vehicleSim 用 DOM marker 单独渲染）
+ *   图层        符号                着色                   怎么认
+ *   监控探头    📹 emoji            原色；故障点整枚染红   #F04438 的实心剪影＝故障
+ *   信号灯      🚦 emoji 的剪影     状态四色 绿/红/黄/灰   红绿一眼分得开
+ *   警员分布    👮 emoji            原色（深蓝制服）       用户 2026-09-15 指定要蓝
+ *   公交站点    🚏 emoji            原色
+ *   公交线路    线                  #0E9AA7 青绿实线
+ *   道路拥堵    线                  红/橙/黄 语义三色（分严重/中度/轻度，不改）
+ *   动态车辆    —                   专属色                 车形 SVG（vehicleSim 用 DOM marker 单独渲染）
  *
- * 图标本体（圆角方块徽章）在 tools/trafficIcons.js，这里只放「用哪个图标 + 什么颜色 + 多大 + 聚合成什么样」。
- *   · 尺寸 9~10（L7 的 size 是半径，屏幕上 = size×2，即 18~20px）：徽章本体画满 64 的 viewBox，
- *     所以 size 基本等于徽章半径；外面还有 1.5px 白描边、再外面是阴影，视觉总宽约 size×2+4。
- *     信号灯多给 1（20px 才分得出三盏灯）。原来是 4.5~6px 的几何点，现在再大就盖住路网了。
- *   · 颜色的选择理由照旧：紫/品红/橙/青绿，与底图路网蓝（initLayer 的 #1990FF）redmean 色差 ≥120，
- *     彼此也拉开 ≥60。以下是实测过的老账：源数据里警员 #3d7bff、公交站 #00c2ff、公交线路 #2b8cff
- *     都是这一族蓝，照数据着色就与路网糊成一片（CDP 截图 + 识图复核确认），所以本模块按图层统一给色。
- *   · 聚合气泡用**主色的同族深色**（同色相、压暗），一眼看出这个气泡属于哪一层。
+ * 符号本体（emoji 位图）在 tools/trafficIcons.js，这里只放「用哪个符号 + 什么颜色 + 多大 + 聚合成什么样」。
+ *   · 尺寸：**四层统一 SYMBOL=9**（L7 的 size 是半径 ⇒ 屏幕上 18px）。上一版是 9~10 的徽章本体，
+ *     外面还套 1.5px 白描边 + 投影，视觉总宽 ≈26px，用户连说三次「太大」。18px 的依据是动态车辆：
+ *     车 marker 的盒子是 22px，但车形 SVG 的墨迹只占 11.6×19.2（24 格里）⇒ 屏幕上 10.6×17.6px，
+ *     所以 18px 的满框 emoji 与车**视觉等大**（烤图时墨迹占方框 96%，故实际墨迹 ≈17px）。
+ *   · 着色：彩色 emoji 靠「图层色＝白」走原色分支，想要「整枚染成某个颜色」就给非白色
+ *     （遮罩分支）—— 信号灯的状态四色、探头故障点的红都走这条，详见 trafficIcons.js 文件头。
+ *   · 聚合点（同一位置合并了多个点）用**主色同族深色**的实心圆点，尺寸与图标**完全一致** ——
+ *     一眼看出「这里有一撮点」，且缩小/放大都不变形、不随桶内点数变大。
  */
+const SYMBOL = 9 // 点符号半径（px）：四层统一，屏幕直径 18px
+
 const ICON = {
-  camera: { shape: 'camera', color: '#7C4DFF', faulty: '#F04438', bubble: '#5E35B1', title: '监控', z: 20, size: 9 },
+  camera: { faulty: '#F04438', dot: '#5E35B1', title: '监控', z: 20 },
   trafficLight: {
-    shape: 'trafficLight',
-    size: 10, // 三盏灯在 20px 里才分得出上下（18px 会糊成一根柱子）
     // 四色与弹窗 stateMap 同源（green/red/yellow/fault），按状态取色而不是按数组下标
     state: { green: '#12B76A', red: '#F04438', yellow: '#F79009', fault: '#8C9AB0' },
-    bubble: '#0E9B57', title: '信号灯', z: 25
+    // 聚合点是「一撮信号灯」，取图层主色（绿）的深色；单个点的红/黄/绿仍按 state 给
+    dot: '#0E9B57', title: '信号灯', z: 25
   },
-  police: { shape: 'police', color: '#E2447E', bubble: '#C02B63', title: '警员', z: 30, size: 9 },
-  busStop: { shape: 'busStop', color: '#EF6820', bubble: '#C9530C', title: '公交站', z: 15, size: 9 },
+  police: { dot: '#1E3A8A', title: '警员', z: 30 },
+  busStop: { dot: '#C9530C', title: '公交站', z: 15 },
   /* 公交线路：源数据 50 条线路的 color 列全是 #2b8cff（≈ 底图路网蓝），
    * 照数据着色就等于把线路藏进路网里，故本层统一用青绿（图层视觉决策，不读 color 列）。 */
-  busRoute: { color: '#0E9AA7', width: 2.2 },
-  /** 悬停高亮色：原来的 #fff 是给深色底图配的，亮色底图上白点=原地消失 */
-  active: '#1A2233'
+  busRoute: { color: '#0E9AA7', width: 1.8 },
+  /* 说明：这里原本还有一个 active（悬停高亮色 #1A2233），改用 emoji 后取消 ——
+   * L7 的 .active({color}) 是**改图层色**，而彩色 emoji 靠「图层色＝白」走原色分支，
+   * 一旦被改成高亮色就会整枚变成剪影。悬停反馈改由光标承担（见 clickable）。 */
 }
 
 /* ---------------- 聚合（L7 自带 cluster，内部就是 supercluster） ----------------
@@ -110,26 +142,26 @@ const ICON = {
  * （scripts/cdp-l7cluster-probe.mjs / 早期的 tmp-cluster-tune 测量）：
  *   监控 220 点铺满全城，22；信号灯 231 点较散，12；警员 62 点稀疏，16；公交站 225 点挤在
  *   默认视图 83×98 像素里，16（再大就并成一个桶，再小就散成一片）。
+ *   注：裁剪（roadCoverage）会把不在路网里的点先滤掉，实际入桶的点数比上面少
+ *   （信号灯 231→40、警员 62→16、探头和公交站基本不变），radii 沿用实测值不动。
  * maxZoom 取 11 是刻意的：
- *   · 由 zoom 空间定义（mapZoom-1）⇒ map zoom ≥ 12 时**全部散开**，默认视图 9.5 出气泡、
+ *   · 由 zoom 空间定义（mapZoom-1）⇒ map zoom ≥ 12 时**全部散开**，默认视图 9.5 出聚合点、
  *     区县视图 12 过渡、放大到 13+ 全是个体图标；
  *   · 大屏/巡检的定位用的是 zoom 16~17（TrafficScreen.vue），不会出现「飞过去了却只有一个
- *     气泡、图标不见了」；
+ *     聚合点、图标不见了」；
  *   · 顺带保住 cdp-probe14 的取样缩放（首次 15、回退 13.5/12 —— 都 ≥12，图标照常画出来）。
  */
 const CLUSTER = { camera: 22, trafficLight: 12, police: 16, busStop: 16, maxZoom: 11 }
 
-/* 桶内点数 → 气泡半径（屏幕像素）。散点返回 0 —— L7 的 size 回调没有 0 的特判，0 就是不画
- * （逐点连通块判定过：散点位置上零墨迹，见 cdp-l7cluster-probe 的 E1）。
- * 用 log 而不是线性：桶内点数从 2 到 223 跨两个数量级，线性会让小桶看不出、大桶盖掉半屏。 */
-const bubbleR = (n) => {
-  const pc = Number(n) || 0
-  return pc > 1 ? 12 + 10 * Math.min(1, Math.log10(pc) / 1.8) : 0
-}
-
-/* 桶内数量文字的样式。textAllowOverlap 必须开：L7 默认会做文字避让（filterGlyphs），
- * 密集处会把数字整批丢掉，看起来就是「有的桶没数字」（探针 E3 实测）。 */
-const COUNT_STYLE = { textAllowOverlap: true, textAnchor: 'center', textOffset: [0, 0], fontWeight: 700 }
+/* 「桶上还是散点上」——两层各一个 size 回调，各自返回 0（L7 里 size=0 就是不画，
+ * 逐点连通块判定过：那个位置零墨迹，见 cdp-l7cluster-probe 的 E1）。
+ * ★ 必须用 size 回调而不是 .filter()：filter 会把被滤掉的记录清成 {}，L7 的 PointLayer 在
+ *   「空数据」分支上认不出 { field: 'zb-emoji-*' } 这种图标名，模型退化成普通方块
+ *   （根因与实测见下面 pointStack 的注释，cdp-probe14 曾因此一直假通过）。
+ * ★ 两层尺寸是**同一个 SYMBOL**：上一版聚合气泡半径 12→22px 随桶内点数增长，于是滚轮缩小、
+ *   散点并成桶时符号反而变大 —— 正是用户 2026-09-15 说的「滚轮向下缩小时图层符号不要变大」。 */
+const scatterSize = (n) => (n > 1 ? 0 : SYMBOL) // 图标层：只画散点
+const clusterSize = (n) => (n > 1 ? SYMBOL : 0) // 聚合点：只画桶
 
 /* 取图标名还是退回几何形状：
  * 图标是异步注册的（scene.addImage 内部 new Image + 解码），若在图标就绪前建图层，
@@ -146,95 +178,72 @@ const registry = {}
 /* 每个条目：{ visible: 当前显示状态, layer: 主图层实例, group: 该点位的一套图层 }
  * ★ `layer` 必须始终指向**主图标层**：cdp-probe13 / probe14 / probe16 / shot-readme / cdp-l7*.mjs
  *   都直接读它（读 size/shape/颜色、取 originData、取样计数），字段名与语义不能变。
- *   `group` 是本次新增的：符号升级后一套点位是 5 个 L7 图层，显示/隐藏/销毁要整组来。 */
+ *   `group` 是一套点位的那组图层（现在是 2 个：图标 + 聚合点），显示/隐藏/销毁都整组来。 */
 const ensure = (name) => {
   if (!registry[name]) registry[name] = { visible: false, layer: null, group: [] }
   return registry[name]
 }
 
-/* 把一套图层挂进场景。工厂可能返回：单个 layer（线/热力）、图层数组、或 { main, layers }（点位的一套）。
+/* 把一套图层挂进场景。工厂返回两种形态：裸 layer（线/热力）或 { main, layers }（点位的一套）。
  * ★ 裸图层**没有** `.layers` 属性 —— 这里一度写成 `built.layers[0]`，于是公交线路/拥堵/热力
  *   一开就抛 "Cannot read properties of undefined (reading '0')"，图层/面板开关全哑
- *   （实测：三层的 setVisible 全部抛错、registry 里 layer 永远为 null）。
- *   统一用 group[0] 兜底，三种返回形态都能挂上。 */
+ *   （实测：三层的 setVisible 全部抛错、registry 里 layer 永远为 null）。group[0] 兜底把两种都接住。 */
 const mount = (item, built) => {
-  const group = Array.isArray(built) ? built : (built.layers || [built])
-  item.layer = Array.isArray(built) ? built[0] : (built.main || group[0])
+  const group = built.layers || [built]
+  item.layer = built.main || group[0]
   item.group = group
   for (const l of group) sceneRef.addLayer(l)
 }
 
-/* ---------------- 点位符号的通用装配（3 层徽章 + 2 层聚合） ----------------
- * 一套点位 = 5 个 L7 图层（自下而上，zIndex 递增）：
- *   影  z+0  深色模糊图，配 .color('#FFFFFF') 走原色分支 —— 只有这一支保留纹理 alpha（柔和投影）
- *   底  z+1  纯白实心圆角方块（比徽章大 1.5px）⇒ 徽章外侧的白描边 + 镂空处透出来的真白
- *   本体 z+2  徽章（状态色/主色），只画散点
- *   泡  z+3  聚合气泡（主色同族深色，半径随桶内点数 12→22）
- *   数  z+4  桶内数量（白字）
- * 为什么必须拆成 5 个而不是 1 个：见 trafficIcons.js 文件头（着色器只能染一个颜色、且丢纹理 alpha）。
- * 5 个图层共用同一份 FC：各自建 supercluster 索引（几百个点，开销可忽略），换来的是
- * 气泡/图标/数字永远同源同缩放，不会出现「气泡和图标对不上」的中间态。
+/* ---------------- 点位符号的通用装配（2 层：图标 + 聚合点） ----------------
+ * 一套点位 = 2 个 L7 图层（自下而上，zIndex 递增）：
+ *   图标 z+0  散点上的 emoji 位图 —— .color('#FFFFFF') 走原色分支（全彩）；给非白色则走遮罩分支
+ *             （信号灯按 state 染色、探头故障点染红，都是「整枚变色」，见 trafficIcons.js 文件头）
+ *   聚合 z+1  桶上的实心圆点（主色同族深色），尺寸与图标**完全一致**
+ * 两个图层共用同一份 FC：各自建 supercluster 索引（几百个点，开销可忽略），换来的是
+ * 图标/聚合点永远同源同缩放，不会出现「对不上」的中间态。
  *
- * 互斥显示（关键）：桶上不画图标、散点上不画气泡。三条路线实测：
- *   三层徽章 .size('point_count', 回调)：桶返回 0（gl_PointSize=0 不产生像素）。
- *     ★ 原先这三层用的是 .filter('point_count', 单散点)，**它是坏的**，根因在 L7：
- *       filter 会把被滤掉的记录清成 {}（getEncodedData 里一条带 shape 的记录都不剩），
- *       于是 PointLayer.getModelType()（point/index.js:190）走到「空数据」分支
- *       getModelTypeWillEmptyData()（同文件 :122）—— 那个分支只认 values 数组 / 'text' /
- *       shape2d，认不出我们这种 { field: 'zb-icon-*' } 的图标名 ⇒ 返回 'normal'
- *       ⇒ 建出来的是**普通方块模型**（且 normal 默认 additive 混合），根本不是图片模型。
- *       现场症状：zoom15 图标位置取色 = 255,255,255（紫徽章叠在饱和的白底板上做加法还是白），
- *       把底板层藏掉才看到徽章的紫（6099 px）；此时 getModelType() 仍报 'image'，
- *       因为它是**按当前数据**算的，而绑定的是当初用空数据建的那个方块模型 —— 所以断言
- *       getModelType() 抓不住这个 bug（cdp-probe14 一直是假通过）。
- *       触发条件正好是默认视图：建层时 zoom9.5，camera 全是桶、散点 0 个 ⇒ 三层 filter 结果全空。
- *       改成 size 回调后每条记录都留着 shape 键 ⇒ 模型恒为 image，缩放来回穿也不会退化
- *       （实测 15→9.5→15：徽章紫像素 8918 → 19 → 8918，模型类型始终 image）。
- *       代价：cdp-probe14 读 size 要按 point_count 取样（已同步改成读散点值与桶值两个数）。
- *   气泡 .size('point_count', 回调)：半径本来就要随点数变，顺带让散点返回 0 即不画。
- *   数字 .filter()：与探针 E3 的原始用法一致（text 模型两条分支都是 'text'，不受上面那个坑影响）。
+ * 互斥显示（关键）：桶上不画图标、散点上不画聚合点。历史上这里踩过一个很深的坑，别改回去：
+ *   ★ 曾经用 .filter('point_count', 单散点)，**它是坏的**，根因在 L7：
+ *     filter 会把被滤掉的记录清成 {}（getEncodedData 里一条带 shape 的记录都不剩），
+ *     于是 PointLayer.getModelType()（point/index.js:190）走到「空数据」分支
+ *     getModelTypeWillEmptyData()（同文件 :122）—— 那个分支只认 values 数组 / 'text' /
+ *     shape2d，认不出我们这种 { field: 'zb-emoji-*' } 的图标名 ⇒ 返回 'normal'
+ *     ⇒ 建出来的是**普通方块模型**（且 normal 默认 additive 混合），根本不是图片模型。
+ *     现场症状：zoom15 图标位置取色 = 255,255,255（彩色图标叠在饱和的白底板上做加法还是白）；
+ *     此时 getModelType() 仍报 'image'，因为它是**按当前数据**算的，而绑定的是当初用空数据
+ *     建的那个方块模型 —— 所以断言 getModelType() 抓不住这个 bug（cdp-probe14 一直是假通过）。
+ *     触发条件正好是默认视图：建层时 zoom9.5，camera 全是桶、散点 0 个 ⇒ filter 结果全空。
+ *   改用 .size('point_count', 回调) 后每条记录都留着 shape 键 ⇒ 模型恒为 image，
+ *   缩放来回穿也不会退化（实测 15→9.5→15：图标像素 8918 → 19 → 8918，模型类型始终 image）。
+ *   代价：cdp-probe14 读 size 要按 point_count 取样（已同步改成读散点值与桶值两个数）。
  */
 const pointStack = (key, data) => {
   const c = ICON[key]
   const cluster = { cluster: true, clusterOptions: { radius: CLUSTER[key], maxZoom: CLUSTER.maxZoom } }
   const mk = (suffix, dz) => new PointLayer({ id: `交通-${c.title}${suffix}`, zIndex: c.z + dz }).source(data, cluster)
-  /* 徽章的两张共用件是异步注册的，图没就绪时先不建这两层 —— L7 找不到图名会**静默退化成文字渲染**
-   * （point/index.js 的 iconMap 兜底是 text），比不画还难看。注册完成后会重建（见文件末尾）。 */
-  const ready = (part) => sceneRef && sceneRef.hasImage(part.id)
-  const layers = []
-  /* 影子层比底板大 1.5、比徽章大 3：差量就是白描边（1.5）和投影片（外面那圈）的宽度。
-   * 影子图形本身接近满框（见 trafficIcons.js 的 SHADOW），所以 size+3 才有地方露出来。
-   * ★ 这三层必须和本体用**同一套「桶上归零」**：它们只服务于徽章，桶上不该有徽章、
-   *   也就不该有影子和白底板。实测漏掉时，桶位置会留下一块白底板 + 深色影子，而气泡是 0.92
-   *   半透明的 —— 透过气泡能看到中间那块白底和深影，气泡看起来是「中间发暗的一块脏圆」（截图取色复核）。
-   * （为什么不是 filter 而是 size 回调：见上面 pointStack 的注释 —— filter 会让模型退化成方块。） */
-  const iconSize = (size) => (n) => (n > 1 ? 0 : size)
-  if (ready(BADGE_IMAGES.shadow)) {
-    layers.push(mk('-影', 0).shape(BADGE_IMAGES.shadow.id).size('point_count', iconSize(c.size + 3)).color('#FFFFFF'))
-  }
-  if (ready(BADGE_IMAGES.backing)) {
-    layers.push(mk('-底', 1).shape(BADGE_IMAGES.backing.id).size('point_count', iconSize(c.size + 1.5)).color('#FFFFFF'))
-  }
-  const main = mk('', 2).shape(shapeOf(key)).size('point_count', iconSize(c.size))
-  const bubble = mk('-泡', 3).shape('circle').size('point_count', bubbleR).color(c.bubble).style({ opacity: 0.92 })
-  const count = mk('-数', 4)
-    .shape('point_count', 'text')
-    .size(13)
-    .color('#FFFFFF')
-    .filter('point_count', (n) => n > 1)
-    .style(COUNT_STYLE)
-  layers.push(main, bubble, count)
-  /* 点气泡 → 飞到该桶并放大（聚合点的用途就是「放大看细节」）。展开级别优先用 supercluster 的
-   * getClusterExpansionZoom（保证这桶真的散开），拿不到就退化成 +2；上限 15，免得一路飞到楼顶。
-   * 气泡层的点击载荷与图标层一样是**扁平记录**（开聚合后没有 .properties，探针 E6 实测）。
-   *
-   * ★ 同一个处理器必须**同时挂在数字层上**：数字正好画在气泡中心、又比气泡高一层（z+4），
-   *   L7 的拾取是按点精灵的方框走的 —— 只有气泡层接事件的话，用户在正中间那一下点到的
-   *   其实是数字层，什么都不会发生（probe16 的「点气泡」一条会直接失败）。 */
-  const onBubbleClick = (e) => {
+  /* 图标层与聚合层用**同一套「桶上归零 / 散点归零」**：桶上不画图标、散点上不画聚合点。
+   * 漏掉任一边的现场症状都实测过：只画不互斥时，桶位置会同时出现一枚图标和一个圆点，
+   * 散点位置也会多出一颗深色圆点（看起来像「每个点都被描了个深色底」）。 */
+  const main = mk('', 0).shape(shapeOf(key)).size('point_count', scatterSize)
+  const dot = mk('-聚', 1).shape('circle').size('point_count', clusterSize).color(c.dot).style({ opacity: 0.92 })
+  const layers = [main, dot]
+  /* 点聚合点 → 弹「这里有几个点」+ 飞到该桶并放大（聚合点的用途就是「放大看细节」）。
+   * 展开级别优先用 supercluster 的 getClusterExpansionZoom（保证这桶真的散开），
+   * 拿不到就退化成 +2；上限 15，免得一路飞到楼顶。
+   * 聚合层的点击载荷与图标层一样是**扁平记录**（开聚合后没有 .properties，探针 E6 实测），
+   * 桶内点数在 p.point_count 上。 */
+  const onDotClick = (e) => {
     const p = e.feature.properties || e.feature
     const center = p.coordinates || (p.lng != null ? [p.lng, p.lat] : null)
     if (!center || center[0] == null) return
+    const n = Number(p.point_count) || 0
+    showPopup(center, `
+      <div style="min-width:140px">
+        <b>${c.title}聚合点</b><br/>
+        这里合并了 <b>${n}</b> 个${c.title}点位<br/>
+        <span style="color:#667085">已放大到能看清单个符号的级别</span>
+      </div>`)
     const map = sceneRef.map // L7 场景里就是 mapbox-gl 的 Map（有 easeTo/getZoom）
     if (!map || !map.easeTo) return
     /* ★ 展开级别要 **+1**（probe16 实测出来的 bug）：点气泡时中心精确落到了桶上、zoom 却纹丝不动。
@@ -254,31 +263,37 @@ const pointStack = (key, data) => {
   }
   let ex = null
   try {
-    const idx = bubble.layerSource && bubble.layerSource.clusterIndex
+    const idx = dot.layerSource && dot.layerSource.clusterIndex
     if (idx && p.cluster_id !== undefined) ex = idx.getClusterExpansionZoom(p.cluster_id)
   } catch (err) { ex = null }
   if (ex && typeof ex.then === 'function') ex.then((z) => go(Number(z) + 1.5)).catch(() => go())
   else if (typeof ex === 'number') go(ex + 1.5)
   else go()
-}
-  bubble.on('click', onBubbleClick)
-  count.on('click', onBubbleClick)
+  }
+  dot.on('click', onDotClick)
+  clickable(dot)
+  clickable(main) // 图标层的点击处理器由各工厂挂（要读该图层自己的字段）
   return { main, layers }
 }
 
 const layerFactories = {
   camera() {
     const c = ICON.camera
-    const st = pointStack('camera', pointFC('cameras', rows('cameras')))
-    // 按状态取色（不靠数组下标对号入座，避免分类顺序变了之后故障点变紫）
-    st.main.color('status', (s) => (s === 'fault' ? c.faulty : c.color)).active({ color: ICON.active })
+    const st = pointStack('camera', clipPoints(pointFC('cameras', rows('cameras'))))
+    /* 彩色 emoji 的着色（读 trafficIcons.js 文件头的两条分支）：
+     * 正常点 .color('#FFFFFF') ⇒ 原色分支，直接显示 📹 本身的颜色；
+     * 故障点给 #F04438 ⇒ 遮罩分支，整枚染成红的实心剪影 —— 这正是「故障一眼可见」要的效果。
+     * 按 status 取值而不是数组下标对号入座，分类顺序变了也不会把正常点染红。
+     * 不再调 .active({color})：它会把彩色图标整枚染成高亮色（原色分支的前提是图层色＝白）。
+     * 「可点击」的反馈改由光标承担（见 clickable）。 */
+    st.main.color('status', (s) => (s === 'fault' ? c.faulty : '#FFFFFF'))
     st.main.on('click', (e) => {
       /* 开聚合后点击载荷是**扁平记录**（L7 把 cluster 的要素摊平了，没有 .properties；
        * 探针 E6 用真鼠标事件验过 payload 里 lng/lat/name 都直接可取）。兼容两种形态，弹窗逻辑不变。 */
       const p = e.feature.properties || e.feature
       showPopup([p.lng, p.lat], `
         <div style="min-width:150px">
-          <b>🎥 ${p.name}</b><br/>
+          <b>📹 ${p.name}</b><br/>
           道路：${p.road}<br/>
           状态：${p.status === 'normal' ? '<span style="color:#22c55e">正常</span>' : '<span style="color:#ff3b30">故障</span>'}<br/>
           区县：${p.area}
@@ -288,8 +303,11 @@ const layerFactories = {
   },
   trafficLight() {
     const c = ICON.trafficLight
-    const st = pointStack('trafficLight', pointFC('traffic_lights', rows('traffic_lights')))
-    st.main.color('state', (s) => c.state[s] || c.state.fault).active({ color: ICON.active })
+    const st = pointStack('trafficLight', clipPoints(pointFC('traffic_lights', rows('traffic_lights'))))
+    /* 信号灯走**遮罩分支**（用户 2026-09-15 拍板「整枚按状态染色」）：图层色＝状态色 ⇒
+     * 红/绿/黄/灰四色的信号灯剪影，红绿在地图上一眼分得开。
+     * 这一层是四层里唯一不显示彩色 emoji 的层 —— 彩色位图改不了色，而「红绿区分」是硬需求。 */
+    st.main.color('state', (s) => c.state[s] || c.state.fault)
     st.main.on('click', (e) => {
       const p = e.feature.properties || e.feature
       const stateMap = { green: '绿灯', red: '红灯', yellow: '黄灯', fault: '故障' }
@@ -303,9 +321,10 @@ const layerFactories = {
     return st
   },
   police() {
-    const c = ICON.police
-    const st = pointStack('police', pointFC('police', rows('police')))
-    st.main.color(c.color).active({ color: ICON.active })
+    const st = pointStack('police', clipPoints(pointFC('police', rows('police'))))
+    /* 警员用 👮 的**原色**（.color('#FFFFFF') 走原色分支）：用户要求「统一改成蓝色」，
+     * 👮 本身就是深蓝制服 + 蓝帽，比上一版自定义的品红更贴语义。 */
+    st.main.color('#FFFFFF')
     st.main.on('click', (e) => {
       const p = e.feature.properties || e.feature
       showPopup([p.lng, p.lat], `
@@ -321,12 +340,13 @@ const layerFactories = {
   busRoute() {
     const c = ICON.busRoute
     const layer = new LineLayer({ id: '交通-公交线路', zIndex: 5 })
-    layer.source(routeFC(rows('bus_routes')))
+    layer.source(clipLines(routeFC(rows('bus_routes'))))
       .size(c.width)
       .shape('line')
       .color(c.color) // 图层固定青绿：数据里的 color 列与底图路网同蓝，见 ICON.busRoute 注释
       .style({ opacity: 0.85 }) // 静态美化：压一点透明度，与底图路网叠在一起时不抢眼（用户选了不做动效）
 
+    clickable(layer)
     layer.on('click', (e) => {
       const p = e.feature.properties
       showPopup(evLngLat(e), `
@@ -341,10 +361,12 @@ const layerFactories = {
   congestion() {
     const layer = new LineLayer({ id: '交通-拥堵', zIndex: 6 })
     layer.source(congestionFC())
-      // 静态美化：按等级分粗细（严重最粗），原来一律 4px 看不出差别。没有任何脚本断言本层宽度，安全。
-      .size('level', [6.5, 3])
+      /* 按等级分粗细（严重最粗）。数值随本次「路网整体变细」一并下调（原 6.5/3）：
+       * 底图总道路从 1px 级降到 0.7px 之后，6.5px 的拥堵段像一条压在路网上的色带。 */
+      .size('level', [5, 2.5])
       .shape('line')
       .color('level', ['#ff3b30', '#ff9500', '#ffd60a']) // 0严重/1中度/2轻度
+    clickable(layer)
     layer.on('click', (e) => {
       const p = e.feature.properties
       showPopup(evLngLat(e), `
@@ -359,7 +381,10 @@ const layerFactories = {
   },
   heat() {
     const layer = new HeatmapLayer({ id: '交通-热力', zIndex: 2 })
-    layer.source(pointFC('heat_points', rows('heat_points')))
+    /* 热力点也要裁：源数据 336 个点里有 271 个离路网 > 500m（散在临淄/高青那些
+     * 没有路网的地方），不裁的话热力斑会飘在一片空白上（用户第 2 条「每个图层都要在总道路范围内」）。
+     * 裁剪后 65 个点全部落在张店路网带上，热力斑与路网重合。 */
+    layer.source(clipPoints(pointFC('heat_points', rows('heat_points'))))
       .shape('heatmap')
       .size('value', [0, 1])
       .style({
@@ -374,9 +399,9 @@ const layerFactories = {
     return layer
   },
   busStop() {
-    const c = ICON.busStop
-    const st = pointStack('busStop', pointFC('bus_stops', rows('bus_stops')))
-    st.main.color(c.color).active({ color: ICON.active })
+    const st = pointStack('busStop', clipPoints(pointFC('bus_stops', rows('bus_stops'))))
+    // 原色分支：🚏 站牌本身的颜色（实测样点最远 254m，裁剪对公交站等于没裁）
+    st.main.color('#FFFFFF')
     st.main.on('click', (e) => {
       const p = e.feature.properties || e.feature
       showPopup(evLngLat(e), `
@@ -395,13 +420,13 @@ const BRIDGE_NAMES = { building: '淄博市', mainRoad: '淄博道路' }
 /** 初始化（App.vue 地图就绪后调用一次：注册图标 + 保存 scene 引用，不建任何图层） */
 export function initTrafficLayers(scene) {
   sceneRef = scene
-  /* 注册主题图标。走 scene.addImage 而不是直接给 .shape 传 URL：L7 只认注册过的图片名。
-   * 注册是异步的，所以注册完要重建一次已显示的图层 —— 否则开着图层时刷新页面，
-   * 图层会停在「图标还没注册好」那一刻建的几何形状版（fallback），再也不换回来。
-   * 徽章的两张共用件（阴影/白底板）也要注册，否则那两层会被跳过（见 pointStack 的 ready）。 */
-  const pending = [...Object.values(TRAFFIC_ICONS), ...Object.values(BADGE_IMAGES)]
-    .filter((i) => !scene.hasImage(i.id)) // HMR 会重复调 initTrafficLayers，重复注册 L7 只会告警
-    .map((i) => scene.addImage(i.id, iconUrl(i)))
+  /* 注册四枚 emoji 位图。走 scene.addImage 而不是直接给 .shape 传 URL：L7 只认注册过的图片名。
+   * 位图是**同步**烤出来的（canvas），但 addImage 内部是 new Image + 解码、仍是异步完成，
+   * 所以注册完要重建一次已显示的图层 —— 否则开着图层时刷新页面，图层会停在
+   * 「图还没就绪」那一刻建的几何形状版（fallback），再也不换回来。 */
+  const pending = Object.keys(TRAFFIC_ICONS)
+    .filter((k) => !scene.hasImage(TRAFFIC_ICONS[k].id)) // HMR 会重复调 initTrafficLayers，重复注册 L7 只会告警
+    .map((k) => scene.addImage(TRAFFIC_ICONS[k].id, emojiDataUrl(k)))
   if (pending.length) {
     Promise.all(pending)
       .then(() => refreshVisibleTrafficLayers())
@@ -415,6 +440,9 @@ export function initTrafficLayers(scene) {
       toggle: (n) => toggleTrafficLayer(n),
       visible: (n) => isTrafficLayerVisible(n),
       refresh: (n) => refreshTrafficLayer(n),
+      /* 烤给 L7 的位图本体（data URL）：CDP 探针要把它取出来在 Node 侧解码，
+       * 验「这台浏览器真的烤出了 emoji」而不是只看配置名对不对（scripts/cdp-probe17.mjs） */
+      emoji: (k) => emojiDataUrl(k),
       registry
     }
     /* 图层构造器（仅 DEV）：给实验脚本临时建图层用 —— 聚合/文字/阴影这些 L7 能力
@@ -446,10 +474,11 @@ export function setTrafficLayerVisible(name, visible) {
     if (!item.layer) {
       mount(item, layerFactories[name]())
     } else {
-      for (const l of item.group) l.show() // 点位层是一组 5 个，整组显隐
+      for (const l of item.group) l.show() // 点位层是一组 2 个（图标 + 聚合点），整组显隐
     }
   } else {
     for (const l of item.group) l.hide()
+    resetCursor() // 鼠标正停在要素上时关图层，mouseleave 不会再触发，光标得手动收回
   }
   item.visible = visible
   // 同步到 store.trafficOn 镜像（实时数据栏 UI 与 AI 助手状态查询共用同一来源）

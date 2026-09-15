@@ -11,7 +11,7 @@
  */
 import { writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { decodePNG, classifyPixels, colorBlobs } from './lib/png.mjs'
+import { decodePNG, classifyPixels } from './lib/png.mjs'
 import { TRAFFIC_ICONS } from '../src/tools/trafficIcons.js'
 
 /* 底图路网（L7 的「淄博道路」）覆盖范围：只画了淄博市区一带，区县点（如临淄的信号灯）压根不在
@@ -104,15 +104,27 @@ const HUE = `window.__cm=window.__cm||{
 }`
 
 /* 每层规范：形状（图标 id）直接从源码 import —— 抄一份放这儿迟早会跟实现漂移，
- * 图标 id 改名后探针还照样「通过」，那就等于没验。size/颜色仍写在这里（断言要有独立预期）。 */
+ * 图标 id 改名后探针还照样「通过」，那就等于没验。size/颜色仍写在这里（断言要有独立预期）。
+ *
+ * ★ 2026-09-15 起符号换成 emoji 位图（用户「尽量图层点符号都用对应的简单的小 emoji」）：
+ *   · size 四层统一 = SYMBOL 9（屏幕 18px），不再是「一层一个尺寸」；
+ *   · 「互相区分」的手段**从颜色换成了字形**：三层走原色分支（图层色恒为 '#FFFFFF'，
+ *     只是「放行纹理原色」的开关，不是画出来的颜色），四层靠 📹/👮/🚏/🚦 的形状区分。
+ *     所以下面 B 段不再拿点位层的主色两两比 —— 那是上一版（手绘彩色徽章）的判据，现在恒同色。
+ *   · 点符号**真的画到屏幕上了吗**由 scripts/cdp-probe17.mjs 的 G 段逐要素数渲染像素来验
+ *     （信号灯剪影的状态色是底图里不存在的色，命中即图标），C 段因而只留线图层。 */
 const SPEC = {
-  camera: { shape: TRAFFIC_ICONS.camera.id, size: [6, 10], colors: ['#7C4DFF', '#F04438'] },
-  trafficLight: { shape: TRAFFIC_ICONS.trafficLight.id, size: [6, 11], colors: ['#12B76A', '#F04438', '#F79009', '#8C9AB0'] },
-  police: { shape: TRAFFIC_ICONS.police.id, size: [6, 11], colors: ['#E2447E'] },
-  busStop: { shape: TRAFFIC_ICONS.busStop.id, size: [6, 12], colors: ['#EF6820'] },
+  camera: { shape: TRAFFIC_ICONS.camera.id, size: [8, 10], colors: ['#FFFFFF', '#F04438'] },
+  trafficLight: { shape: TRAFFIC_ICONS.trafficLight.id, size: [8, 10], colors: ['#12B76A', '#F04438', '#F79009', '#8C9AB0'] },
+  police: { shape: TRAFFIC_ICONS.police.id, size: [8, 10], colors: ['#FFFFFF'] },
+  busStop: { shape: TRAFFIC_ICONS.busStop.id, size: [8, 10], colors: ['#FFFFFF'] },
   busRoute: { shape: 'line', size: [1, 4], colors: ['#0E9AA7'] }
 }
 const ALL = Object.keys(SPEC)
+const POINT_KEYS = ['camera', 'trafficLight', 'police', 'busStop']
+/* 视觉层（C 段）只跑线图层：点位层的图层色是白，而亮色底图整片都接近白，
+ * 按色数像素会把底图全算进来（假通过）。点位层的渲染证据在 probe17 G 段。 */
+const VISUAL_KEYS = ['busRoute']
 const MIN_DIST = 120 // redmean 距离：低于此值就当作「和路网同色」
 
 ws.onopen = async () => {
@@ -220,14 +232,22 @@ ws.onopen = async () => {
       `${n} 最接近路网蓝的用色，redmean 色差 ≥${MIN_DIST}`, { 最小色差: minDist, 路网蓝HSL: road && road.road })
   }
 
-  /* ---------- B 各层主色互相拉开 ---------- */
-  console.log(`\n===== B 各图层主色两两拉开（redmean ≥${MIN_DIST}） =====`)
-  const MAIN = JSON.stringify(Object.fromEntries(ALL.map((n) => [n, SPEC[n].colors[0]])))
+  /* ---------- B 各层互相拉开（点位层看**字形**，线图层看颜色） ---------- */
+  console.log(`\n===== B 各层互相拉开（点位层比字形，线图层比颜色 redmean ≥${MIN_DIST}） =====`)
+  /* 点位层：颜色不再是区分手段（三层图层色恒为白），改成断言「字形两两不同」——
+   * 这跟色相判据是同一件事的替代：用户在图上得能一眼分辨是哪一层。 */
+  const chars = POINT_KEYS.map((k) => TRAFFIC_ICONS[k].char)
+  const ids = POINT_KEYS.map((k) => TRAFFIC_ICONS[k].id)
+  info('四类点符号', POINT_KEYS.map((k) => `${k}=${TRAFFIC_ICONS[k].char}`))
+  check(new Set(chars).size === POINT_KEYS.length, '四类点位的 emoji 字符两两不同（不撞形）', chars)
+  check(new Set(ids).size === POINT_KEYS.length, '四类点位的 L7 图片名两两不同（不会互相顶掉注册）', ids)
+  /* 线图层之间 / 线图层与底图路网：颜色仍然是主要区分手段，判据照旧 */
+  const MAIN = JSON.stringify(Object.fromEntries(VISUAL_KEYS.map((n) => [n, SPEC[n].colors[0]])))
   const hues = await evj(`${HUE};JSON.stringify((()=>{const m=${MAIN},o={}
     for(const k in m) o[k]={hsl:__cm.hsl(m[k]), hex:m[k]}
     return o})())`)
-  info('各层主色', hues)
-  const keys = ALL.filter((k) => hues && hues[k] && hues[k].hsl && hues[k].hsl.h !== null)
+  info('参与比色的图层', hues)
+  const keys = VISUAL_KEYS.filter((k) => hues && hues[k] && hues[k].hsl && hues[k].hsl.h !== null)
   const pairs = []
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
@@ -240,10 +260,15 @@ ws.onopen = async () => {
     }
   }
   info('两两距离', pairs.map((p) => `${p.a}↔${p.b} 色相${p.hue}° ΔE${p.dE}`))
-  const badHue = pairs.filter((p) => !(p.hue >= 25))
-  const badDE = pairs.filter((p) => !(p.dE >= 60))
-  check(badHue.length === 0, `主色两两色相相距 ≥25°（共 ${pairs.length} 对）`, badHue)
-  check(badDE.length === 0, `主色两两 redmean 色差 ≥60（共 ${pairs.length} 对）`, badDE)
+  if (keys.length >= 2) {
+    const badHue = pairs.filter((p) => !(p.hue >= 25))
+    const badDE = pairs.filter((p) => !(p.dE >= 60))
+    check(badHue.length === 0, `主色两两色相相距 ≥25°（共 ${pairs.length} 对）`, badHue)
+    check(badDE.length === 0, `主色两两 redmean 色差 ≥60（共 ${pairs.length} 对）`, badDE)
+  } else {
+    /* 只有一层参与比色时「两两」是空集 —— 不写成恒真断言，如实说明本条不适用 */
+    info('参与比色的线图层不足两层，两两色差判据不适用（点位层的区分手段已换成字形）', keys)
+  }
 
   /* ---------- C 视觉层：逐层单独截图 + 数像素复核 ----------
    * 识图模型看 1600×900 里的 4.5px 圆点会直接说「没看见标记」，所以像素这一关自己数：
@@ -279,7 +304,7 @@ ws.onopen = async () => {
         if(s.x>=C.x&&s.x<=C.x+C.width&&s.y>=C.y&&s.y<=C.y+C.height){k++;break}}}
     return k})()`)
 
-  for (const n of ALL) {
+  for (const n of VISUAL_KEYS) {
     for (const k of ALL) await ev(`window.__traffic.setVisible(${JSON.stringify(k)}, ${k === n})`)
     await sleep(700)
     /* 取样中心：把所有点按「±0.012°（≈1.1km）内邻居数」排个序，取前 6 个候选交给 Node 挑，
@@ -356,17 +381,10 @@ ws.onopen = async () => {
     // 下限：每个落在取样区里的要素至少该有 4px 实心（4.5px 圆点去掉 1px 白描边后约 5~9px）
     const min = Math.max(4 * inside, n === 'busRoute' ? 150 : 24)
     check(total >= min, `${n} 规范色像素 ≥${min}（该层图标确实画到屏幕上了）`, { 合计: total })
-    /* 离散块判据：图标必须是若干「一个图标那么大」的实心块。
-     * 只数像素是不够的——底图里撞色的要素也能贡献一大堆像素，「一块大糊块」和「一排图标」
-     * 在总像素上可能一模一样。图标 15~17px（size 7.5~8.5），实心面积约 150~350px，
-     * 下限取 40（比一个图标小一个量级 = 底图噪声），上限 1200（图标相互重叠成两三个的量级，
-     * 再大就是糊成一片了）。线图层（公交线路）本身就是长条，不适用本条。 */
-    if (n !== 'busRoute') {
-      const boxes = SPEC[n].colors.flatMap((hex) => colorBlobs(img, CLIP, hex))
-      const good = boxes.filter((b) => b.n >= 40 && b.n <= 1200)
-      check(good.length >= 2, `${n} 图标是离散成块（40~1200px 的块 ≥2 个，不是底图撞色糊成一片）`,
-        { 块数: boxes.length, 前3块面积: boxes.slice(0, 3).map((b) => b.n) })
-    }
+    /* 「图标必须是若干离散小块」这条判据本来在这里，现已搬到 probe17 的 G 段并**变严**：
+     * 不再是「整屏数出 ≥2 个大小合适的块」，而是「逐要素投影到屏幕坐标、在它自己的 26×26 窗口里
+     * 数该状态色的像素」—— 位置对不上、颜色用错状态都算失败。原因见 B 段注释：
+     * 点位层的图层色现在是白，在亮色底图上按色数像素整片都会被算进来（假通过）。 */
     // 路网蓝同时要在场：不在场说明这一屏根本没路，那「跟路网区分得开」也就无从谈起
     if (roadInFrameExpected) {
       check(px['#1990FF'] > 0, `${n} 同屏能看到底图路网（蓝色像素 >0，区分才有意义）`, px['#1990FF'])
