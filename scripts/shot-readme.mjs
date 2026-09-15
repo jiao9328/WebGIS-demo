@@ -10,9 +10,13 @@
  *   · 登录态：除 login.png 外都要先注入 sessionStorage 的 zb_auth_user（路由守卫会拦），
  *     旧版靠手动登录；login.png 反而必须「未登录」，所以第一张先截、截完再注入。
  *
- * 用法：node scripts/shot-readme.mjs [名字...]
- *   不带参数 = 全截；带名字只截其中几张（如 `node scripts/shot-readme.mjs main charts`）
+ * 用法：APP_PORT=5173 node scripts/shot-readme.mjs [名字...]
+ *   不带参数 = 全截；带名字只截其中几张（如 `APP_PORT=5173 node scripts/shot-readme.mjs main charts`）
  *   前置：dev server 在跑、headless Chrome 带 --remote-debugging-port=9223 在跑
+ *
+ *   ★ **必须带 APP_PORT=5173**：下面的默认值 5180 是历史遗留（那阵子 dev server 跑在 5180），
+ *     现在的 `npm run dev` 就是 vite 默认的 5173。漏了不会报错，只会整轮卡在
+ *     「等 .login-card」超时、然后每张图都截成空白页 —— 与 cdp-probe14.mjs 是同一个坑。
  */
 import { writeFileSync, statSync } from 'node:fs'
 
